@@ -239,21 +239,54 @@ def send_email(to: str, subject: str, body: str) -> str:
         except Exception as e:
             return f"Error mock-sending email: {str(e)}"
 
+def get_calendar_service():
+    try:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+        
+        if os.path.exists("token.json"):
+            creds = Credentials.from_authorized_user_file("token.json", ["https://www.googleapis.com/auth/calendar"])
+            return build("calendar", "v3", credentials=creds)
+    except ImportError:
+        pass
+    return None
+
 @tool
 def calendar_today() -> str:
     """Get today's calendar events."""
     print("  [Tool] calendar_today()")
     try:
+        service = get_calendar_service()
+        if service:
+            import datetime as dt
+            now = dt.datetime.utcnow().isoformat() + "Z"
+            end_of_day = (dt.datetime.utcnow() + dt.timedelta(days=1)).isoformat() + "Z"
+            events_result = service.events().list(
+                calendarId="primary", timeMin=now, timeMax=end_of_day, 
+                singleEvents=True, orderBy="startTime"
+            ).execute()
+            events = events_result.get("items", [])
+            
+            if not events:
+                return "No upcoming events found for today (Google Calendar)."
+                
+            today_events = []
+            for e in events:
+                start = e["start"].get("dateTime", e["start"].get("date"))
+                today_events.append(f"{start} - {e['summary']}")
+            return " | ".join(today_events)
+            
+        # Fallback to local JSON mock
         calendar_file = "calendar.json"
         if not os.path.exists(calendar_file):
-            return "No events scheduled for today."
+            return "No events scheduled for today (Mock)."
             
         with open(calendar_file, "r") as f:
             events = json.load(f)
             
         today_events = [f"{e['date']} - {e['title']}" for e in events]
         if not today_events:
-            return "No events scheduled for today."
+            return "No events scheduled for today (Mock)."
             
         return " | ".join(today_events)
     except Exception as e:
@@ -264,6 +297,17 @@ def create_event(title: str, date: str) -> str:
     """Create a calendar event with a title and date."""
     print(f"  [Tool] create_event({title}, {date})")
     try:
+        service = get_calendar_service()
+        if service:
+            event = {
+                "summary": title,
+                "start": {"date": date},
+                "end": {"date": date},
+            }
+            event_result = service.events().insert(calendarId="primary", body=event).execute()
+            return f"Event '{title}' scheduled on {date} (Google Calendar ID: {event_result.get('id')})"
+            
+        # Fallback to local JSON mock
         calendar_file = "calendar.json"
         events = []
         if os.path.exists(calendar_file):
@@ -275,7 +319,7 @@ def create_event(title: str, date: str) -> str:
         with open(calendar_file, "w") as f:
             json.dump(events, f, indent=4)
             
-        return f"Event '{title}' scheduled on {date}"
+        return f"Event '{title}' mock-scheduled on {date}. (Need token.json for real Calendar)"
     except Exception as e:
         return f"Error creating event: {str(e)}"
 
@@ -683,7 +727,8 @@ if __name__ == "__main__":
     graph = build_graph()
 
     initial_state: GraphState = {
-        "user_query": "search the poem.txt and summarize what it contains. " ,
+#         "user_query": "search the poem.txt and summarize what it contains. " ,
+        "user_query": "Send an email to chaitanyashinde545@gmail.com saying hello and that the productivity agent is working!" ,
         "messages": [],
         "workspace_messages": [],
         "knowledge_messages": [],

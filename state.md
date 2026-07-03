@@ -14,4 +14,5 @@
 - [x] Setting up virtual environment with `uv`.
 - [x] Implementing `productivity_agent` (Using JSON mocks as connectors).
 - [x] Implemented real Gmail SMTP connector for `send_email`.
+- [x] Implemented Google Calendar API connector with mock fallback.
 - [ ] Connectors testing and debugging.
