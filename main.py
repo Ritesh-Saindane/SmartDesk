@@ -22,7 +22,7 @@ load_dotenv()
 # =========================================================
 # CONFIGURATION
 # =========================================================
-os.environ["GROQ_API_KEY"] = "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"
+# GROQ_API_KEY is loaded from .env
 MODEL_NAME = "openai/gpt-oss-120b"
 
 # =========================================================
