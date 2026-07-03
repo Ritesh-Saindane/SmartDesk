@@ -388,7 +388,7 @@ def create_event(title: str, date: str) -> str:
 
 
 workspace_tools = [read_file, search_file, create_folder, write_file]
-knowledge_tools = [summarize, write_essay, answer_question]
+knowledge_tools = [ write_essay, answer_question]
 productivity_tools = [send_email, calendar_today, create_event]
 
 # =========================================================
@@ -818,7 +818,7 @@ if __name__ == "__main__":
 
     initial_state: GraphState = {
         #         "user_query": "search the poem.txt and summarize what it contains. " ,
-        "user_query": "check upcoming events in my calendar , understand the event properly and follow the instructions of that event",
+        "user_query": "Search for Project_plan.md in my workspace, read it, create a notes folder, write a summary to notes/summary.txt, schedule a meeting on calendar called README Review for tomorrow at 10:00 AM, and email me the summary at chaitanyashinde545@gmail.com",
         "messages": [],
         "workspace_messages": [],
         "knowledge_messages": [],
@@ -837,7 +837,7 @@ if __name__ == "__main__":
     print("  MULTI-AGENT LANGGRAPH — EXPLICIT NODES & TOOL LOOPS")
     print("=========================================================")
 
-    final_state = graph.invoke(initial_state, config={"recursion_limit": 25})
+    final_state = graph.invoke(initial_state, config={"recursion_limit": 35})
 
     print("\n=========================================================")
     print("  GRAPH FINISHED")
