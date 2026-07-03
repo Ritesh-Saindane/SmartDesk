@@ -317,10 +317,15 @@ def create_event(title: str, date: str) -> str:
     try:
         service = get_calendar_service()
         if service:
+            if "T" in date:
+                time_dict = {"dateTime": date}
+            else:
+                time_dict = {"date": date}
+                
             event = {
                 "summary": title,
-                "start": {"date": date},
-                "end": {"date": date},
+                "start": time_dict,
+                "end": time_dict,
             }
             event_result = service.events().insert(calendarId="primary", body=event).execute()
             return f"Event '{title}' scheduled on {date} (Google Calendar ID: {event_result.get('id')})"
