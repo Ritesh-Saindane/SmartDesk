@@ -197,20 +197,63 @@ def answer_question(question: str) -> str:
 @tool
 def send_email(to: str, body: str) -> str:
     """Send an email to the specified recipient."""
+    from datetime import datetime
     print(f"  [Tool] send_email(to={to})")
-    return f"Email successfully sent to {to}"
+    try:
+        outbox_file = "email_outbox.json"
+        emails = []
+        if os.path.exists(outbox_file):
+            with open(outbox_file, "r") as f:
+                emails = json.load(f)
+        
+        emails.append({"to": to, "body": body, "timestamp": datetime.now().isoformat()})
+        
+        with open(outbox_file, "w") as f:
+            json.dump(emails, f, indent=4)
+            
+        return f"Email successfully queued to {to}"
+    except Exception as e:
+        return f"Error sending email: {str(e)}"
 
 @tool
 def calendar_today() -> str:
     """Get today's calendar events."""
     print("  [Tool] calendar_today()")
-    return "10:00 AM - Standup | 1:00 PM - Lunch | 3:00 PM - Review"
+    try:
+        calendar_file = "calendar.json"
+        if not os.path.exists(calendar_file):
+            return "No events scheduled for today."
+            
+        with open(calendar_file, "r") as f:
+            events = json.load(f)
+            
+        today_events = [f"{e['date']} - {e['title']}" for e in events]
+        if not today_events:
+            return "No events scheduled for today."
+            
+        return " | ".join(today_events)
+    except Exception as e:
+        return f"Error reading calendar: {str(e)}"
 
 @tool
 def create_event(title: str, date: str) -> str:
     """Create a calendar event with a title and date."""
     print(f"  [Tool] create_event({title}, {date})")
-    return f"Event '{title}' scheduled on {date}"
+    try:
+        calendar_file = "calendar.json"
+        events = []
+        if os.path.exists(calendar_file):
+            with open(calendar_file, "r") as f:
+                events = json.load(f)
+                
+        events.append({"title": title, "date": date})
+        
+        with open(calendar_file, "w") as f:
+            json.dump(events, f, indent=4)
+            
+        return f"Event '{title}' scheduled on {date}"
+    except Exception as e:
+        return f"Error creating event: {str(e)}"
 
 workspace_tools    = [read_file, search_file, create_folder, write_file]
 knowledge_tools    = [summarize, write_essay, answer_question]

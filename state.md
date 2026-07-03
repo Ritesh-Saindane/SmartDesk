@@ -10,6 +10,7 @@
 
 ## Progress
 - [x] Initialized `state.md`.
-- [ ] Analyzing `main.py`.
-- [ ] Setting up virtual environment with `uv`.
-- [ ] Implementing `productivity_agent`.
+- [x] Analyzing `main.py`.
+- [x] Setting up virtual environment with `uv`.
+- [x] Implementing `productivity_agent` (Using JSON mocks as connectors).
+- [ ] Connectors testing and debugging.
