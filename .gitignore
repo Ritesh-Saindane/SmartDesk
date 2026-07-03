@@ -3,3 +3,7 @@
 __pycache__/
 *.json
 *.log
+credentials.json
+token.json
+secretForGoogle.txt
+email_to_chaitanyashinde545.txt

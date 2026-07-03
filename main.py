@@ -746,7 +746,7 @@ if __name__ == "__main__":
 
     initial_state: GraphState = {
 #         "user_query": "search the poem.txt and summarize what it contains. " ,
-        "user_query": "Send an email to chaitanyashinde545@gmail.com saying hello and that the productivity agent is working!" ,
+        "user_query": "Check my calendar for today. Then send an email to chaitanyashinde545@gmail.com summarizing my events today." ,
         "messages": [],
         "workspace_messages": [],
         "knowledge_messages": [],
