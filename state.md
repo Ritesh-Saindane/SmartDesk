@@ -13,4 +13,5 @@
 - [x] Analyzing `main.py`.
 - [x] Setting up virtual environment with `uv`.
 - [x] Implementing `productivity_agent` (Using JSON mocks as connectors).
+- [x] Implemented real Gmail SMTP connector for `send_email`.
 - [ ] Connectors testing and debugging.

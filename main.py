@@ -195,25 +195,49 @@ def answer_question(question: str) -> str:
     return f"Mock answer to: {question}"
 
 @tool
-def send_email(to: str, body: str) -> str:
-    """Send an email to the specified recipient."""
+def send_email(to: str, subject: str, body: str) -> str:
+    """Send an email to the specified recipient using Gmail SMTP if credentials exist, else mock it."""
     from datetime import datetime
+    import smtplib
+    from email.message import EmailMessage
+    
     print(f"  [Tool] send_email(to={to})")
-    try:
-        outbox_file = "email_outbox.json"
-        emails = []
-        if os.path.exists(outbox_file):
-            with open(outbox_file, "r") as f:
-                emails = json.load(f)
-        
-        emails.append({"to": to, "body": body, "timestamp": datetime.now().isoformat()})
-        
-        with open(outbox_file, "w") as f:
-            json.dump(emails, f, indent=4)
+    
+    # Read credentials from .env
+    sender_email = os.getenv("GMAIL_ADDRESS", "smartdeskgenai@gmail.com")
+    app_password = os.getenv("GMAIL_APP_PASSWORD")
+    
+    if app_password:
+        try:
+            msg = EmailMessage()
+            msg["Subject"] = subject
+            msg["From"] = sender_email
+            msg["To"] = to
+            msg.set_content(body)
             
-        return f"Email successfully queued to {to}"
-    except Exception as e:
-        return f"Error sending email: {str(e)}"
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                server.login(sender_email, app_password)
+                server.send_message(msg)
+            return f"Email successfully sent to {to} via SMTP."
+        except Exception as e:
+            return f"Error sending email via SMTP: {str(e)}"
+    else:
+        # Fallback to local JSON mock
+        try:
+            outbox_file = "email_outbox.json"
+            emails = []
+            if os.path.exists(outbox_file):
+                with open(outbox_file, "r") as f:
+                    emails = json.load(f)
+            
+            emails.append({"to": to, "subject": subject, "body": body, "timestamp": datetime.now().isoformat()})
+            
+            with open(outbox_file, "w") as f:
+                json.dump(emails, f, indent=4)
+                
+            return f"Email mock-queued to {to}. (Set GMAIL_APP_PASSWORD in .env for real sending)"
+        except Exception as e:
+            return f"Error mock-sending email: {str(e)}"
 
 @tool
 def calendar_today() -> str:
