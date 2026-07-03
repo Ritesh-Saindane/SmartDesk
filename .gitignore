@@ -7,3 +7,5 @@ credentials.json
 token.json
 secretForGoogle.txt
 email_to_chaitanyashinde545.txt
+*.tar.gz
+*.zip
