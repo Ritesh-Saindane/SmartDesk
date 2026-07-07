@@ -704,9 +704,38 @@ def share_drive_file(file_id: str, email: str, role: str = "reader") -> str:
     except Exception as e:
         return f"Error sharing file: {str(e)}"
 
+@tool
+def lookup_contact(name: str) -> str:
+    """Lookup an email address for a given name from the contact book."""
+    print(f"  [Tool] lookup_contact({name})")
+    import os, json
+    contacts_file = "contacts.json"
+    if not os.path.exists(contacts_file):
+        # Create a dummy contact book if it doesn't exist
+        dummy_contacts = {
+            "sarah": "sarah.smith@example.com",
+            "engineering team": "eng-team@example.com",
+            "manager": "boss@example.com"
+        }
+        with open(contacts_file, "w") as f:
+            json.dump(dummy_contacts, f, indent=4)
+        
+    try:
+        with open(contacts_file, "r") as f:
+            contacts = json.load(f)
+        
+        name_lower = name.lower()
+        for contact_name, email in contacts.items():
+            if name_lower in contact_name.lower():
+                return f"Contact found: {contact_name} -> {email}"
+                
+        return f"No contact found matching '{name}'."
+    except Exception as e:
+        return f"Error reading contact book: {str(e)}"
+
 workspace_tools = [read_file, search_file, create_folder, write_file]
 knowledge_tools = [ write_essay, answer_question]
-productivity_tools = [send_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive, send_telegram_message, create_doc, read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file]
+productivity_tools = [send_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive, send_telegram_message, create_doc, read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file, lookup_contact]
 
 # =========================================================
 # LLM INSTANCES  (one per agent, separate bindings)
@@ -1002,7 +1031,7 @@ def productivity_agent(state: GraphState) -> dict:
         if aid in state["artifacts"]
     }
 
-    sys_prompt = f"""You are ProductivityAgent. You handle emails, calendars, scheduling, Google Tasks, Telegram messages, Google Docs, and Google Drive file operations.
+    sys_prompt = f"""You are ProductivityAgent. You handle emails, calendars, scheduling, Google Tasks, Telegram messages, Google Docs, looking up contacts, and Google Drive file operations.
 Task: {task.instruction}
 Expected Output: {task.expected_output}
 Context: {json.dumps(context)}

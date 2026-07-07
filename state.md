@@ -24,4 +24,5 @@
 - [x] Google Docs Integration (`create_doc`, `read_doc`, `append_to_doc`).
 - [x] Advanced Calendar (`reschedule_event`, `delete_event`).
 - [x] Advanced Drive (`share_drive_file`).
+- [x] Contact Book JSON Lookup (`lookup_contact`).
 - [x] Automated Test Suite (Expand `test_productivity.py` and run tests).

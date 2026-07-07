@@ -9,7 +9,8 @@ load_dotenv()
 from main import (
     create_event, calendar_today, send_email, create_task, list_tasks, 
     upload_to_drive, search_drive, send_telegram_message, create_doc, 
-    read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file
+    read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file,
+    lookup_contact
 )
 
 def test_productivity():
@@ -73,6 +74,11 @@ def test_productivity():
     print(f"Reschedule Result: {result_reschedule}")
     result_delete = delete_event.invoke({"event_id": "mock_event_id"})
     print(f"Delete Result: {result_delete}")
+
+    # 4e. Test Contact Book
+    print("\n4e. Testing Contact Book...")
+    result_contact = lookup_contact.invoke({"name": "sarah"})
+    print(f"Contact Result: {result_contact}")
 
     # 5. Send the schedule via email
     print("\n5. Sending email with the schedule...")
