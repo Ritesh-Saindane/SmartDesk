@@ -263,35 +263,48 @@ def send_email(to: str, subject: str, body: str) -> str:
             return f"Error mock-sending email: {str(e)}"
 
 
-def get_calendar_service():
+def get_google_credentials():
+    import os.path
+
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+
+    SCOPES = [
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/tasks",
+        "https://www.googleapis.com/auth/drive.file"
+    ]
+    creds = None
+
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+        # Check if existing token has the newly required scopes
+        if not creds.has_scopes(SCOPES):
+            creds = None
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        elif os.path.exists("credentials.json"):
+            flow = InstalledAppFlow.from_client_secrets_file(
+                "credentials.json", SCOPES
+            )
+            creds = flow.run_local_server(port=0)
+            with open("token.json", "w") as token:
+                token.write(creds.to_json())
+        else:
+            return None  # No credentials provided
+
+    return creds
+
+
+def get_google_service(name, version):
     try:
-        import os.path
-
-        from google.auth.transport.requests import Request
-        from google.oauth2.credentials import Credentials
-        from google_auth_oauthlib.flow import InstalledAppFlow
         from googleapiclient.discovery import build
-
-        SCOPES = ["https://www.googleapis.com/auth/calendar"]
-        creds = None
-
-        if os.path.exists("token.json"):
-            creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            elif os.path.exists("credentials.json"):
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    "credentials.json", SCOPES
-                )
-                creds = flow.run_local_server(port=0)
-                with open("token.json", "w") as token:
-                    token.write(creds.to_json())
-            else:
-                return None  # No credentials provided
-
-        return build("calendar", "v3", credentials=creds)
+        creds = get_google_credentials()
+        if creds:
+            return build(name, version, credentials=creds)
     except ImportError:
         pass
     return None
@@ -302,7 +315,7 @@ def calendar_today() -> str:
     """Get today's calendar events."""
     print("  [Tool] calendar_today()")
     try:
-        service = get_calendar_service()
+        service = get_google_service("calendar", "v3")
         if service:
             import datetime as dt
 
@@ -353,7 +366,7 @@ def create_event(title: str, date: str) -> str:
     """Create a calendar event with a title and date."""
     print(f"  [Tool] create_event({title}, {date})")
     try:
-        service = get_calendar_service()
+        service = get_google_service("calendar", "v3")
         if service:
             if "T" in date:
                 time_dict = {"dateTime": date}
@@ -387,9 +400,100 @@ def create_event(title: str, date: str) -> str:
         return f"Error creating event: {str(e)}"
 
 
+@tool
+def create_task(title: str, due_date: str = None) -> str:
+    """Create a task in Google Tasks. due_date should be RFC3339 format if provided."""
+    print(f"  [Tool] create_task({title}, {due_date})")
+    try:
+        service = get_google_service("tasks", "v1")
+        if service:
+            task = {"title": title}
+            if due_date:
+                task["due"] = due_date
+            result = service.tasks().insert(tasklist="@default", body=task).execute()
+            return f"Task '{title}' created (Google Tasks ID: {result.get('id')})"
+        
+        # Mock fallback
+        tasks_file = "tasks.json"
+        tasks = []
+        if os.path.exists(tasks_file):
+            with open(tasks_file, "r") as f:
+                tasks = json.load(f)
+        tasks.append({"title": title, "due": due_date})
+        with open(tasks_file, "w") as f:
+            json.dump(tasks, f, indent=4)
+        return f"Task '{title}' mock-created. (Need token.json for real Tasks)"
+    except Exception as e:
+        return f"Error creating task: {str(e)}"
+
+
+@tool
+def list_tasks() -> str:
+    """List pending tasks from Google Tasks."""
+    print("  [Tool] list_tasks()")
+    try:
+        service = get_google_service("tasks", "v1")
+        if service:
+            results = service.tasks().list(tasklist="@default", showCompleted=False).execute()
+            items = results.get("items", [])
+            if not items:
+                return "No pending tasks found."
+            return " | ".join([f"{t.get('title')} (Due: {t.get('due', 'None')})" for t in items])
+
+        # Mock fallback
+        tasks_file = "tasks.json"
+        if not os.path.exists(tasks_file):
+            return "No tasks found (Mock)."
+        with open(tasks_file, "r") as f:
+            tasks = json.load(f)
+        return " | ".join([f"{t['title']} (Due: {t.get('due', 'None')})" for t in tasks])
+    except Exception as e:
+        return f"Error reading tasks: {str(e)}"
+
+
+@tool
+def upload_to_drive(file_path: str, mime_type: str = None) -> str:
+    """Upload a local file to Google Drive."""
+    print(f"  [Tool] upload_to_drive({file_path})")
+    try:
+        if not os.path.exists(file_path):
+            return f"Error: File does not exist -> {file_path}"
+        
+        service = get_google_service("drive", "v3")
+        if service:
+            from googleapiclient.http import MediaFileUpload
+            file_name = os.path.basename(file_path)
+            file_metadata = {"name": file_name}
+            media = MediaFileUpload(file_path, mimetype=mime_type)
+            result = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
+            return f"File '{file_name}' uploaded to Drive (ID: {result.get('id')})"
+        
+        return f"Mock: File '{file_path}' ready to be uploaded. (Need token.json for real Drive)"
+    except Exception as e:
+        return f"Error uploading to Drive: {str(e)}"
+
+
+@tool
+def search_drive(query: str) -> str:
+    """Search for files in Google Drive using a search query (e.g., "name contains 'Project'")."""
+    print(f"  [Tool] search_drive({query})")
+    try:
+        service = get_google_service("drive", "v3")
+        if service:
+            results = service.files().list(q=query, spaces="drive", fields="files(id, name)").execute()
+            items = results.get("files", [])
+            if not items:
+                return "No files found in Drive."
+            return " | ".join([f"{f['name']} (ID: {f['id']})" for f in items])
+        
+        return "Mock: Searched Drive. (Need token.json for real Drive)"
+    except Exception as e:
+        return f"Error searching Drive: {str(e)}"
+
+
 workspace_tools = [read_file, search_file, create_folder, write_file]
 knowledge_tools = [ write_essay, answer_question]
-productivity_tools = [send_email, calendar_today, create_event]
+productivity_tools = [send_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive]
 
 # =========================================================
 # LLM INSTANCES  (one per agent, separate bindings)
@@ -454,7 +558,7 @@ Strict Rules:
 5. Do NOT set finished=True if there are pending actions requested in the user query that have not been performed yet.
 6. When setting finished=True, you MUST write a final_response answering the user's query using the content/payload of the completed task artifacts.
 7. When you read a file, print its content in final response which u will get in payload.
-8. When dealing with Calendar and or events , invoke productivity agent only
+8. When dealing with Calendar, events, Tasks, or Google Drive files, invoke productivity agent only
 """
 
     decision: OrchestratorDecision = orchestrator_llm.invoke(
@@ -685,7 +789,7 @@ def productivity_agent(state: GraphState) -> dict:
         if aid in state["artifacts"]
     }
 
-    sys_prompt = f"""You are ProductivityAgent. You handle emails, calendars, and scheduling.
+    sys_prompt = f"""You are ProductivityAgent. You handle emails, calendars, scheduling, Google Tasks, and Google Drive file operations.
 Task: {task.instruction}
 Expected Output: {task.expected_output}
 Context: {json.dumps(context)}

@@ -15,4 +15,6 @@
 - [x] Implementing `productivity_agent` (Using JSON mocks as connectors).
 - [x] Implemented real Gmail SMTP connector for `send_email`.
 - [x] Implemented Google Calendar API connector with mock fallback.
-- [ ] Connectors testing and debugging.
+- [x] Implemented Google Tasks API connector with mock fallback.
+- [x] Implemented Google Drive API connector with mock fallback.
+- [x] Connectors testing and debugging.
