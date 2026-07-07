@@ -2,96 +2,82 @@ import os
 import sys
 from dotenv import load_dotenv
 
-# Load env vars for email
+# Set HEADLESS_TEST to 1 to ensure mock fallback during automated tests
+os.environ["HEADLESS_TEST"] = "1"
+
 load_dotenv()
 
-# Import the tools directly from main
-from main import (
-    create_event, calendar_today, send_email, create_task, list_tasks, 
-    upload_to_drive, search_drive, send_telegram_message, create_doc, 
-    read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file,
-    lookup_contact
-)
+from main import build_graph
+
+def run_test(test_name, query):
+    print(f"\n=========================================================")
+    print(f"  TEST: {test_name}")
+    print(f"  QUERY: {query}")
+    print(f"=========================================================")
+    
+    graph = build_graph()
+    initial_state = {
+        "user_query": query,
+        "messages": [],
+        "workspace_messages": [],
+        "knowledge_messages": [],
+        "productivity_messages": [],
+        "current_task": None,
+        "completed_tasks": [],
+        "artifacts": {},
+        "logs": [],
+        "final_response": None,
+        "task_counter": 0,
+        "artifact_counter": 0,
+        "agent_steps": 0,
+    }
+    
+    try:
+        final_state = graph.invoke(initial_state, config={"recursion_limit": 50})
+        print("\n  --- TEST COMPLETE ---")
+        print(f"  Final Response  : {final_state.get('final_response')}")
+        print(f"  Tasks Completed : {len(final_state.get('completed_tasks', []))}")
+        print(f"  Artifacts       : {len(final_state.get('artifacts', {}))}")
+        for task in final_state.get('completed_tasks', []):
+            print(f"  -> Agent used: {task.agent} | Task: {task.instruction}")
+    except Exception as e:
+        print(f"\n  --- TEST FAILED ---")
+        print(f"  Error: {str(e)}")
+
 
 def test_productivity():
-    print("--- Testing Productivity Connectors ---")
+    print("--- Robust Testing of Productivity Agent via Orchestrator ---")
     
-    # 1. Create a dummy event
-    print("\n1. Creating dummy event in Google Calendar...")
-    import datetime as dt
-    # Schedule an event 1 hour from now to ensure it's "today"
-    event_time = (dt.datetime.utcnow() + dt.timedelta(hours=1)).isoformat() + "Z"
-    result_create = create_event.invoke({"title": "SmartDesk Automated Test Meeting", "date": event_time})
-    print(f"Result: {result_create}")
+    # 1. Calendar Individual Test
+    run_test(
+        "Calendar Operations",
+        "Check my calendar for today. Then schedule a new meeting called 'Agent Review' for tomorrow. Finally, delete the event with ID 'mock_event_id'."
+    )
     
-    # 2. Fetch today's schedule
-    print("\n2. Fetching today's calendar events...")
-    result_fetch = calendar_today.invoke({})
-    print(f"Result: {result_fetch}")
+    # 2. Tasks & Contacts Individual Test
+    run_test(
+        "Tasks & Contacts",
+        "Lookup the email for Sarah in the contact book. Then create a Google Task called 'Review Sarahs Report' due tomorrow."
+    )
     
-    # 3. Test Tasks
-    print("\n3. Testing Google Tasks...")
-    task_time = (dt.datetime.utcnow() + dt.timedelta(days=1)).isoformat() + "Z"
-    result_create_task = create_task.invoke({"title": "Review SmartDesk Documentation", "due_date": task_time})
-    print(f"Create Task Result: {result_create_task}")
-    result_list_tasks = list_tasks.invoke({})
-    print(f"List Tasks Result: {result_list_tasks}")
-
-    # 4. Test Drive & Advanced Drive
-    print("\n4. Testing Google Drive...")
-    with open("test_upload.txt", "w") as f:
-        f.write("This is a test upload for Google Drive connector.")
-    result_upload = upload_to_drive.invoke({"file_path": "test_upload.txt", "mime_type": "text/plain"})
-    print(f"Upload Drive Result: {result_upload}")
-    os.remove("test_upload.txt")
+    # 3. Google Docs & Telegram Individual Test
+    run_test(
+        "Docs & Telegram",
+        "Create a Google Doc titled 'Automated Report', then append the text 'Test successful' to it. Finally, send a Telegram message saying the report is ready."
+    )
     
-    result_search_drive = search_drive.invoke({"query": "name contains 'test_upload'"})
-    print(f"Search Drive Result: {result_search_drive}")
+    # 4. Google Drive Individual Test
+    run_test(
+        "Drive Sharing",
+        "Search my Google Drive for a file named 'Project_plan' and share it with test@example.com as a reader."
+    )
     
-    # Using a dummy ID to test sharing (it will mock fall back)
-    result_share = share_drive_file.invoke({"file_id": "dummy_id", "email": "test@example.com"})
-    print(f"Share Drive Result: {result_share}")
-
-    # 4b. Test Telegram
-    print("\n4b. Testing Telegram...")
-    result_telegram = send_telegram_message.invoke({"text": "Hello from SmartDesk Automated Test!"})
-    print(f"Telegram Result: {result_telegram}")
-
-    # 4c. Test Docs
-    print("\n4c. Testing Google Docs...")
-    result_create_doc = create_doc.invoke({"title": "Test Doc", "text": "Initial text."})
-    print(f"Create Doc Result: {result_create_doc}")
-    # We parse the mock ID for testing (e.g. mock_1) if not real ID, let's just append to mock_1
-    result_append_doc = append_to_doc.invoke({"doc_id": "mock_1", "text": "Appended text."})
-    print(f"Append Doc Result: {result_append_doc}")
-    result_read_doc = read_doc.invoke({"doc_id": "mock_1"})
-    print(f"Read Doc Result: {result_read_doc}")
-
-    # 4d. Test Advanced Calendar
-    print("\n4d. Testing Advanced Calendar...")
-    reschedule_time = (dt.datetime.utcnow() + dt.timedelta(hours=2)).isoformat() + "Z"
-    result_reschedule = reschedule_event.invoke({"event_id": "mock_event_id", "new_date": reschedule_time})
-    print(f"Reschedule Result: {result_reschedule}")
-    result_delete = delete_event.invoke({"event_id": "mock_event_id"})
-    print(f"Delete Result: {result_delete}")
-
-    # 4e. Test Contact Book
-    print("\n4e. Testing Contact Book...")
-    result_contact = lookup_contact.invoke({"name": "sarah"})
-    print(f"Contact Result: {result_contact}")
-
-    # 5. Send the schedule via email
-    print("\n5. Sending email with the schedule...")
-    email_body = f"Hello,\n\nHere is your schedule for today:\n{result_fetch}\n\nTasks:\n{result_list_tasks}\n\nDrive Activity:\n{result_upload}\n\nBest,\nSmartDesk Productivity Agent"
-    result_email = send_email.invoke({
-        "to": "chaitanyashinde545@gmail.com", 
-        "subject": "Your Daily Schedule & Updates (Automated Test)", 
-        "body": email_body
-    })
-    print(f"Result: {result_email}")
+    # 5. Mixed Workflow Test (Workspace -> Productivity)
+    # The Workspace Agent creates a file, reads it, then Productivity Agent acts on it.
+    run_test(
+        "Mixed Workflow: Poem to Email",
+        "Write a short poem to a file called 'poem.txt' in my workspace. Read the poem.txt file. Then, use the Productivity Agent to lookup my manager's email in the contact book and send them the poem via email."
+    )
     
-    print("\n--- Test Complete ---")
-
 if __name__ == "__main__":
     test_productivity()
-
