@@ -6,7 +6,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import the tools directly from main
-from main import create_event, calendar_today, send_email, create_task, list_tasks, upload_to_drive, search_drive
+from main import (
+    create_event, calendar_today, send_email, create_task, list_tasks, 
+    upload_to_drive, search_drive, send_telegram_message, create_doc, 
+    read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file
+)
 
 def test_productivity():
     print("--- Testing Productivity Connectors ---")
@@ -32,16 +36,43 @@ def test_productivity():
     result_list_tasks = list_tasks.invoke({})
     print(f"List Tasks Result: {result_list_tasks}")
 
-    # 4. Test Drive
+    # 4. Test Drive & Advanced Drive
     print("\n4. Testing Google Drive...")
-    # Create a temporary file to upload
     with open("test_upload.txt", "w") as f:
         f.write("This is a test upload for Google Drive connector.")
     result_upload = upload_to_drive.invoke({"file_path": "test_upload.txt", "mime_type": "text/plain"})
     print(f"Upload Drive Result: {result_upload}")
     os.remove("test_upload.txt")
+    
     result_search_drive = search_drive.invoke({"query": "name contains 'test_upload'"})
     print(f"Search Drive Result: {result_search_drive}")
+    
+    # Using a dummy ID to test sharing (it will mock fall back)
+    result_share = share_drive_file.invoke({"file_id": "dummy_id", "email": "test@example.com"})
+    print(f"Share Drive Result: {result_share}")
+
+    # 4b. Test Telegram
+    print("\n4b. Testing Telegram...")
+    result_telegram = send_telegram_message.invoke({"text": "Hello from SmartDesk Automated Test!"})
+    print(f"Telegram Result: {result_telegram}")
+
+    # 4c. Test Docs
+    print("\n4c. Testing Google Docs...")
+    result_create_doc = create_doc.invoke({"title": "Test Doc", "text": "Initial text."})
+    print(f"Create Doc Result: {result_create_doc}")
+    # We parse the mock ID for testing (e.g. mock_1) if not real ID, let's just append to mock_1
+    result_append_doc = append_to_doc.invoke({"doc_id": "mock_1", "text": "Appended text."})
+    print(f"Append Doc Result: {result_append_doc}")
+    result_read_doc = read_doc.invoke({"doc_id": "mock_1"})
+    print(f"Read Doc Result: {result_read_doc}")
+
+    # 4d. Test Advanced Calendar
+    print("\n4d. Testing Advanced Calendar...")
+    reschedule_time = (dt.datetime.utcnow() + dt.timedelta(hours=2)).isoformat() + "Z"
+    result_reschedule = reschedule_event.invoke({"event_id": "mock_event_id", "new_date": reschedule_time})
+    print(f"Reschedule Result: {result_reschedule}")
+    result_delete = delete_event.invoke({"event_id": "mock_event_id"})
+    print(f"Delete Result: {result_delete}")
 
     # 5. Send the schedule via email
     print("\n5. Sending email with the schedule...")

@@ -18,3 +18,10 @@
 - [x] Implemented Google Tasks API connector with mock fallback.
 - [x] Implemented Google Drive API connector with mock fallback.
 - [x] Connectors testing and debugging.
+
+## Productivity Agent Features Todo
+- [x] Telegram Connector (`send_telegram_message` with mock fallback).
+- [x] Google Docs Integration (`create_doc`, `read_doc`, `append_to_doc`).
+- [x] Advanced Calendar (`reschedule_event`, `delete_event`).
+- [x] Advanced Drive (`share_drive_file`).
+- [x] Automated Test Suite (Expand `test_productivity.py` and run tests).

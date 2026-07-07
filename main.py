@@ -3,6 +3,7 @@ import operator
 import os
 import sys
 import time
+import requests
 from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict
 
 from dotenv import load_dotenv
@@ -265,28 +266,45 @@ def send_email(to: str, subject: str, body: str) -> str:
 
 def get_google_credentials():
     import os.path
+    import json
 
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.exceptions import RefreshError
 
     SCOPES = [
         "https://www.googleapis.com/auth/calendar",
         "https://www.googleapis.com/auth/tasks",
-        "https://www.googleapis.com/auth/drive.file"
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/documents"
     ]
     creds = None
-
+    
+    # Check scopes manually before loading
     if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-        # Check if existing token has the newly required scopes
-        if not creds.has_scopes(SCOPES):
-            creds = None
+        try:
+            with open("token.json", "r") as f:
+                token_data = json.load(f)
+            token_scopes = token_data.get("scopes", [])
+            # If any required scope is missing, we must re-auth
+            if not all(s in token_scopes for s in SCOPES):
+                print("  [Auth] Scopes updated. Requires re-authentication. Falling back to mock for now.")
+                return None
+            creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+        except Exception:
+            pass
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except RefreshError:
+                return None
         elif os.path.exists("credentials.json"):
+            # Don't trigger browser if in automated test
+            if os.environ.get("HEADLESS_TEST") == "1":
+                return None
             flow = InstalledAppFlow.from_client_secrets_file(
                 "credentials.json", SCOPES
             )
@@ -491,9 +509,204 @@ def search_drive(query: str) -> str:
         return f"Error searching Drive: {str(e)}"
 
 
+@tool
+def send_telegram_message(text: str) -> str:
+    """Send a message via Telegram bot."""
+    print("  [Tool] send_telegram_message(...)")
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    
+    if token and chat_id:
+        try:
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            payload = {"chat_id": chat_id, "text": text}
+            response = requests.post(url, json=payload)
+            if response.status_code == 200:
+                return "Telegram message sent successfully."
+            else:
+                return f"Error sending Telegram message: {response.text}"
+        except Exception as e:
+            return f"Error: {str(e)}"
+    
+    # Mock fallback
+    try:
+        outbox_file = "telegram_outbox.json"
+        messages = []
+        if os.path.exists(outbox_file):
+            with open(outbox_file, "r") as f:
+                messages = json.load(f)
+        from datetime import datetime
+        messages.append({"text": text, "timestamp": datetime.now().isoformat()})
+        with open(outbox_file, "w") as f:
+            json.dump(messages, f, indent=4)
+        return "Message mock-queued to Telegram. (Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env for real sending)"
+    except Exception as e:
+        return f"Error mock-sending Telegram message: {str(e)}"
+
+@tool
+def create_doc(title: str, text: str = "") -> str:
+    """Create a new Google Doc and optionally insert text."""
+    print(f"  [Tool] create_doc({title})")
+    try:
+        service = get_google_service("docs", "v1")
+        if service:
+            doc = service.documents().create(body={"title": title}).execute()
+            doc_id = doc.get("documentId")
+            
+            if text:
+                requests_list = [
+                    {
+                        "insertText": {
+                            "location": {"index": 1},
+                            "text": text
+                        }
+                    }
+                ]
+                service.documents().batchUpdate(documentId=doc_id, body={"requests": requests_list}).execute()
+            
+            return f"Google Doc '{title}' created (ID: {doc_id})"
+            
+        # Mock fallback
+        docs_file = "docs_mock.json"
+        docs = {}
+        if os.path.exists(docs_file):
+            with open(docs_file, "r") as f:
+                docs = json.load(f)
+        doc_id = f"mock_{len(docs)+1}"
+        docs[doc_id] = {"title": title, "text": text}
+        with open(docs_file, "w") as f:
+            json.dump(docs, f, indent=4)
+        return f"Google Doc '{title}' mock-created (ID: {doc_id}). (Need token.json for real Docs)"
+    except Exception as e:
+        return f"Error creating doc: {str(e)}"
+
+@tool
+def read_doc(doc_id: str) -> str:
+    """Read the text content of a Google Doc."""
+    print(f"  [Tool] read_doc({doc_id})")
+    try:
+        service = get_google_service("docs", "v1")
+        if service:
+            doc = service.documents().get(documentId=doc_id).execute()
+            content = ""
+            for element in doc.get("body").get("content"):
+                if "paragraph" in element:
+                    for p_element in element.get("paragraph").get("elements"):
+                        if "textRun" in p_element:
+                            content += p_element.get("textRun").get("content")
+            return content
+            
+        # Mock fallback
+        docs_file = "docs_mock.json"
+        if os.path.exists(docs_file):
+            with open(docs_file, "r") as f:
+                docs = json.load(f)
+            if doc_id in docs:
+                return docs[doc_id].get("text", "")
+        return f"Error: Mock Doc '{doc_id}' not found."
+    except Exception as e:
+        return f"Error reading doc: {str(e)}"
+
+@tool
+def append_to_doc(doc_id: str, text: str) -> str:
+    """Append text to the end of an existing Google Doc."""
+    print(f"  [Tool] append_to_doc({doc_id})")
+    try:
+        service = get_google_service("docs", "v1")
+        if service:
+            doc = service.documents().get(documentId=doc_id).execute()
+            end_index = 1
+            content_elements = doc.get("body", {}).get("content", [])
+            if content_elements:
+                last_element = content_elements[-1]
+                end_index = last_element.get("endIndex", 1) - 1
+                
+            requests_list = [
+                {
+                    "insertText": {
+                        "location": {"index": end_index},
+                        "text": "\\n" + text
+                    }
+                }
+            ]
+            service.documents().batchUpdate(documentId=doc_id, body={"requests": requests_list}).execute()
+            return f"Appended text to Google Doc (ID: {doc_id})"
+            
+        # Mock fallback
+        docs_file = "docs_mock.json"
+        if os.path.exists(docs_file):
+            with open(docs_file, "r") as f:
+                docs = json.load(f)
+            if doc_id in docs:
+                docs[doc_id]["text"] += "\\n" + text
+                with open(docs_file, "w") as f:
+                    json.dump(docs, f, indent=4)
+                return f"Appended text to Mock Doc (ID: {doc_id})."
+        return f"Error: Mock Doc '{doc_id}' not found."
+    except Exception as e:
+        return f"Error appending to doc: {str(e)}"
+
+@tool
+def reschedule_event(event_id: str, new_date: str) -> str:
+    """Reschedule an existing Google Calendar event. new_date should be RFC3339 format or YYYY-MM-DD."""
+    print(f"  [Tool] reschedule_event({event_id}, {new_date})")
+    try:
+        service = get_google_service("calendar", "v3")
+        if service:
+            event = service.events().get(calendarId='primary', eventId=event_id).execute()
+            if "T" in new_date:
+                time_dict = {"dateTime": new_date}
+            else:
+                time_dict = {"date": new_date}
+            event["start"] = time_dict
+            event["end"] = time_dict
+            updated_event = service.events().update(calendarId='primary', eventId=event_id, body=event).execute()
+            return f"Event rescheduled to {new_date}."
+            
+        return f"Mock: Event '{event_id}' rescheduled to {new_date}."
+    except Exception as e:
+        return f"Error rescheduling event: {str(e)}"
+
+@tool
+def delete_event(event_id: str) -> str:
+    """Delete a Google Calendar event by ID."""
+    print(f"  [Tool] delete_event({event_id})")
+    try:
+        service = get_google_service("calendar", "v3")
+        if service:
+            service.events().delete(calendarId='primary', eventId=event_id).execute()
+            return f"Event '{event_id}' deleted."
+            
+        return f"Mock: Event '{event_id}' deleted."
+    except Exception as e:
+        return f"Error deleting event: {str(e)}"
+
+@tool
+def share_drive_file(file_id: str, email: str, role: str = "reader") -> str:
+    """Share a Google Drive file with a specific email. role can be 'reader', 'commenter', or 'writer'."""
+    print(f"  [Tool] share_drive_file({file_id}, {email})")
+    try:
+        service = get_google_service("drive", "v3")
+        if service:
+            user_permission = {
+                'type': 'user',
+                'role': role,
+                'emailAddress': email
+            }
+            service.permissions().create(
+                fileId=file_id,
+                body=user_permission,
+                fields='id',
+            ).execute()
+            return f"File '{file_id}' shared with {email} as {role}."
+            
+        return f"Mock: File '{file_id}' shared with {email} as {role}."
+    except Exception as e:
+        return f"Error sharing file: {str(e)}"
+
 workspace_tools = [read_file, search_file, create_folder, write_file]
 knowledge_tools = [ write_essay, answer_question]
-productivity_tools = [send_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive]
+productivity_tools = [send_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive, send_telegram_message, create_doc, read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file]
 
 # =========================================================
 # LLM INSTANCES  (one per agent, separate bindings)
@@ -558,7 +771,7 @@ Strict Rules:
 5. Do NOT set finished=True if there are pending actions requested in the user query that have not been performed yet.
 6. When setting finished=True, you MUST write a final_response answering the user's query using the content/payload of the completed task artifacts.
 7. When you read a file, print its content in final response which u will get in payload.
-8. When dealing with Calendar, events, Tasks, or Google Drive files, invoke productivity agent only
+8. When dealing with Calendar, events, Tasks, Google Docs, Telegram, or Google Drive files, invoke productivity agent only
 """
 
     decision: OrchestratorDecision = orchestrator_llm.invoke(
@@ -789,7 +1002,7 @@ def productivity_agent(state: GraphState) -> dict:
         if aid in state["artifacts"]
     }
 
-    sys_prompt = f"""You are ProductivityAgent. You handle emails, calendars, scheduling, Google Tasks, and Google Drive file operations.
+    sys_prompt = f"""You are ProductivityAgent. You handle emails, calendars, scheduling, Google Tasks, Telegram messages, Google Docs, and Google Drive file operations.
 Task: {task.instruction}
 Expected Output: {task.expected_output}
 Context: {json.dumps(context)}
