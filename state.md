@@ -26,3 +26,9 @@
 - [x] Advanced Drive (`share_drive_file`).
 - [x] Contact Book JSON Lookup (`lookup_contact`).
 - [x] Automated Test Suite (Expand `test_productivity.py` and run tests).
+
+## Testing Plan
+- **Robust Orchestrator Tests:** The testing script `test_productivity.py` has been completely rewritten. Instead of calling python functions directly, it now injects complex queries into the full `GraphState` so the Orchestrator has to correctly route tasks to the Productivity Agent.
+- **Individual Tests:** Explicitly isolated test runs for Calendar, Tasks & Contacts, Docs & Telegram, and Drive Sharing.
+- **Mixed Workflow Tests:** Includes an end-to-end test where the Workspace Agent acts first (writes and reads a poem file locally) and then hands off the artifact payload to the Productivity Agent to be emailed.
+- **Documentation:** Created `productivityagent_guide.md` with detailed instructions on how to use and test the agent.
