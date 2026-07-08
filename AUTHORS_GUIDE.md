@@ -26,6 +26,14 @@ Instead of over-engineering a distributed indexing pipeline with Redis queues an
 - **Metadata Tracking**: It maintains an `index_metadata.json` file to store file modification timestamps (`mtime`). If a file's timestamp hasn't changed since the last run, it is skipped. This makes startups instantaneous unless new documents are added.
 - **The Vector Store**: We use `ChromaDB` (local) and `HuggingFaceEmbeddings` (all-MiniLM-L6-v2) for blazing fast, local embeddings without relying on paid APIs for vectorization.
 
+### 5. Fixing the "413 Payload Too Large" Bug
+When the WorkspaceAgent was asked to search the "current directory", the `search_file(".")` tool matched every file in `.venv`—over 51,000 files! This created a 5MB+ JSON payload that immediately crashed the Groq API (`413 Payload Too Large`).
+- **The Solution**: We strictly excluded `[".venv", "__pycache__", ".git", "chroma_db"]` directly within the `os.walk` loop and limited search results to 50 items. 
+
+### 6. Drive Upload & Orchestrator Hallucinations
+When asked to upload a file to Google Drive, the Orchestrator initially only gave the `ProductivityAgent` the *text content* of the file. Since `upload_to_drive` explicitly requires a local `file_path`, the ProductivityAgent hallucinated a success response instead of failing.
+- **The Solution**: We added **Rule 9** to the Orchestrator's prompt, strictly commanding it to provide the literal `file_path` when instructing the ProductivityAgent to upload to Google Drive.
+
 ---
 
 ## 🎤 Potential Interview Questions & Answers
@@ -40,7 +48,7 @@ Instead of over-engineering a distributed indexing pipeline with Redis queues an
 > **A:** While this prototype is designed for personal workspace sizes, we implemented metadata tracking using file modification timestamps (`mtime`) stored in a JSON file. This ensures we never re-index documents unnecessarily. If we needed to scale to massive document ingestion, we would transition the `refresh_knowledge_base` logic into a background Celery worker and swap ChromaDB for a managed database like Pinecone or pgvector.
 
 **Q: "How do you test a non-deterministic AI agent?"**
-> **A:** We wrote `test_productivity.py` which passes complex, multi-step queries directly into the `initial_state` of the Orchestrator. We aren't just testing the python functions; we are evaluating whether the Orchestrator correctly decomposes the prompt and routes the task to the correct agent. Furthermore, by building the "Mock Fallback" system, we ensure that API flakiness doesn't fail the logic tests.
+> **A:** We wrote `test_end_to_end.py` which passes complex, multi-step queries directly into the `initial_state` of the Orchestrator. We aren't just testing the python functions; we are evaluating whether the Orchestrator correctly decomposes the prompt and routes the task to the correct agents in sequence (e.g., Workspace -> Knowledge -> Productivity). Furthermore, by building the "Mock Fallback" system, we ensure that API flakiness doesn't fail the logic tests.
 
 **Q: "Why didn't you use OpenAI's embeddings?"**
 > **A:** To keep the project completely open and free to run locally, we utilized `langchain-huggingface` with the `all-MiniLM-L6-v2` model. This runs extremely fast on CPU for local RAG operations and demonstrates the ability to build cost-effective AI solutions.
@@ -50,3 +58,8 @@ Instead of over-engineering a distributed indexing pipeline with Redis queues an
 ## 📝 Micro-Commit Strategy
 
 You'll notice the repository uses a `state.md` file. This was intentional to enforce a disciplined, micro-commit strategy. Instead of pushing massive 1,000-line commits, we broke features down into atomic units (e.g., "Add RAG metadata tracking", "Fix routing prompt"). This makes rollbacks trivial and shows future employers/collaborators that we understand proper Git hygiene.
+
+## 🚨 Critical Security Audit Note
+Before pushing the repository to a public platform (like GitHub), we conducted a deep `git log` forensic scan. We discovered that a Groq API Key and a Gmail App Password were leaked in the early commits of the git history (even though they were later removed from the working directory using `git rm --cached`).
+- **Lesson Learned**: Running `git rm --cached` does **not** scrub secrets from git history.
+- **Action Taken**: We immediately rotated/revoked the compromised keys via the provider consoles before making the repo public, preventing bots from stealing the active credentials. We also updated `.gitignore` to be exceptionally strict, blocking `.env`, `token.json`, `credentials.json`, and `.infoForAndAboutDevs`.
