@@ -197,18 +197,116 @@ def summarize(text: str) -> str:
     )
 
 
-@tool
-def write_essay(topic: str) -> str:
-    """Write an essay on the given topic."""
-    print(f"  [Tool] write_essay({topic})")
-    return f"This is a mock essay about: {topic}"
+def get_embeddings():
+    try:
+        from langchain_huggingface import HuggingFaceEmbeddings
+        return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    except ImportError:
+        from langchain_core.embeddings import FakeEmbeddings
+        return FakeEmbeddings(size=384)
 
+@tool
+def refresh_knowledge_base() -> str:
+    """Scan the knowledge folder and index any new or modified files."""
+    print("  [Tool] refresh_knowledge_base()")
+    KNOWLEDGE_DIR = "KnowledgeBase"
+    CHROMA_DB_DIR = "chroma_db"
+    INDEX_METADATA_FILE = "index_metadata.json"
+    
+    if not os.path.exists(KNOWLEDGE_DIR):
+        os.makedirs(KNOWLEDGE_DIR, exist_ok=True)
+        return f"Created {KNOWLEDGE_DIR}. Please add files and run again."
+        
+    try:
+        from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from langchain_chroma import Chroma
+    except ImportError as e:
+        return f"Import Error: {str(e)}. Make sure required packages are installed."
+
+    metadata = {}
+    if os.path.exists(INDEX_METADATA_FILE):
+        try:
+            with open(INDEX_METADATA_FILE, "r") as f:
+                metadata = json.load(f)
+        except Exception:
+            pass
+
+    new_or_modified_files = []
+    
+    for root, _, files in os.walk(KNOWLEDGE_DIR):
+        for file in files:
+            file_path = os.path.join(root, file)
+            mtime = os.path.getmtime(file_path)
+            
+            if file not in metadata or metadata[file].get("last_modified") != mtime:
+                new_or_modified_files.append((file, file_path, mtime))
+
+    if not new_or_modified_files:
+        return "Knowledge base is up to date. No new or modified files found."
+
+    docs_to_index = []
+    for file, file_path, mtime in new_or_modified_files:
+        try:
+            if file.lower().endswith(".pdf"):
+                loader = PyPDFLoader(file_path)
+            elif file.lower().endswith(".md") or file.lower().endswith(".txt"):
+                loader = TextLoader(file_path)
+            elif file.lower().endswith(".docx"):
+                try:
+                    loader = Docx2txtLoader(file_path)
+                except ImportError:
+                    continue
+            else:
+                continue
+                
+            docs = loader.load()
+            docs_to_index.extend(docs)
+            metadata[file] = {"last_modified": mtime}
+        except Exception as e:
+            print(f"Error loading {file}: {e}")
+
+    if not docs_to_index:
+        return "No supported files were successfully read."
+
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    splits = text_splitter.split_documents(docs_to_index)
+    
+    embeddings = get_embeddings()
+    Chroma.from_documents(documents=splits, embedding=embeddings, persist_directory=CHROMA_DB_DIR)
+    
+    with open(INDEX_METADATA_FILE, "w") as f:
+        json.dump(metadata, f, indent=4)
+        
+    return f"Successfully indexed {len(new_or_modified_files)} new/modified files."
 
 @tool
-def answer_question(question: str) -> str:
-    """Answer a factual question."""
-    print(f"  [Tool] answer_question({question})")
-    return f"Mock answer to: {question}"
+def rag_search(query: str) -> str:
+    """Search the knowledge base."""
+    print(f"  [Tool] rag_search({query})")
+    CHROMA_DB_DIR = "chroma_db"
+    if not os.path.exists(CHROMA_DB_DIR):
+        return "Knowledge base is empty. Please run refresh_knowledge_base()."
+        
+    try:
+        from langchain_chroma import Chroma
+    except ImportError as e:
+        return f"Import Error: {str(e)}."
+        
+    embeddings = get_embeddings()
+    vectorstore = Chroma(persist_directory=CHROMA_DB_DIR, embedding_function=embeddings)
+    
+    results = vectorstore.similarity_search(query, k=5)
+    
+    if not results:
+        return "No relevant information found in the knowledge base."
+        
+    formatted_results = []
+    for i, res in enumerate(results):
+        source = res.metadata.get("source", "Unknown")
+        formatted_results.append(f"--- Chunk {i+1} from {source} ---\n{res.page_content}")
+        
+    return "\n\n".join(formatted_results)
 
 
 @tool
@@ -734,7 +832,7 @@ def lookup_contact(name: str) -> str:
         return f"Error reading contact book: {str(e)}"
 
 workspace_tools = [read_file, search_file, create_folder, write_file]
-knowledge_tools = [ write_essay, answer_question]
+knowledge_tools = [refresh_knowledge_base, rag_search]
 productivity_tools = [send_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive, send_telegram_message, create_doc, read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file, lookup_contact]
 
 # =========================================================
@@ -1160,6 +1258,11 @@ def build_graph():
 # =========================================================
 
 if __name__ == "__main__":
+    print("=========================================================")
+    print("  INITIALIZING KNOWLEDGE BASE")
+    print("=========================================================")
+    print(refresh_knowledge_base.invoke({}))
+
     graph = build_graph()
 
     initial_state: GraphState = {
