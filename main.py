@@ -135,14 +135,17 @@ def search_file(name: str) -> str:
 
     try:
         matches = []
+        ignore_dirs = {".venv", "__pycache__", ".git", "chroma_db"}
 
         for root, dirs, files in os.walk("."):
+            dirs[:] = [d for d in dirs if d not in ignore_dirs]
             for file in files:
                 if name.lower() in file.lower():
                     full_path = os.path.join(root, file)
                     matches.append(full_path)
+                    if len(matches) >= 50:
+                        return "\n".join(matches) + "\n...and more (limited to 50 results to prevent payload limit errors). Please be more specific."
 
-        # print(matches)
         if not matches:
             return f"No files found matching '{name}'"
 
