@@ -897,8 +897,11 @@ Strict Rules:
 4. Only assign tasks that are directly necessary to answer the user query.
 5. Do NOT set finished=True if there are pending actions requested in the user query that have not been performed yet.
 6. When setting finished=True, you MUST write a final_response answering the user's query using the content/payload of the completed task artifacts.
-7. When you read a file, print its content in final response which u will get in payload.
-8. When dealing with Calendar, events, Tasks, Google Docs, Telegram, or Google Drive files, invoke productivity agent only
+7. When you read a file, print its content in final response which you will get in payload.
+8. AGENT DEMARCATION (CRITICAL):
+   - WorkspaceAgent: Use ONLY for local file system operations (read, write, search files/folders).
+   - KnowledgeAgent: Use ONLY for searching the knowledge base via RAG and answering knowledge questions.
+   - ProductivityAgent: Use ONLY for external APIs: Emails, Google Calendar, Tasks, Google Docs, Drive, Telegram, Contacts. If the user asks to "draft an email" or "send an email", route it HERE, never to WorkspaceAgent.
 """
 
     decision: OrchestratorDecision = orchestrator_llm.invoke(
