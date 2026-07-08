@@ -11,3 +11,6 @@ email_to_chaitanyashinde545.txt
 *.tar.gz
 *.zip
 *.7z
+.infoForAndAboutDevs/
+chroma_db/
+TestOutput/
