@@ -905,6 +905,7 @@ Strict Rules:
    - WorkspaceAgent: Use ONLY for local file system operations (read, write, search files/folders).
    - KnowledgeAgent: Use ONLY for searching the knowledge base via RAG and answering knowledge questions.
    - ProductivityAgent: Use ONLY for external APIs: Emails, Google Calendar, Tasks, Google Docs, Drive, Telegram, Contacts. If the user asks to "draft an email" or "send an email", route it HERE, never to WorkspaceAgent.
+9. When instructing the ProductivityAgent to upload a file to Google Drive, you MUST provide the literal local file_path (e.g. './folder/file.txt'). Do not just provide the text content.
 """
 
     decision: OrchestratorDecision = orchestrator_llm.invoke(
