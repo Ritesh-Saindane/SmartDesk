@@ -1,5 +1,6 @@
 import os
 import shutil
+from langchain_core.messages import HumanMessage
 import streamlit as st
 from main import build_graph, GraphState
 
@@ -104,13 +105,14 @@ if prompt := st.chat_input("How can I help you today?"):
             prev_final        = False
             prev_msg_counts   = {k: 0 for k, _ in MSG_KEYS}
             prev_artifact_ids: set = set()
+            # chat_id = 3
 
             try:
                 graph = build_graph()
 
                 initial_state = {
                     "user_query": prompt,
-                    "messages": [],
+                    "messages": [HumanMessage(content=prompt)],
                     "workspace_messages": [],
                     "knowledge_messages": [],
                     "productivity_messages": [],
@@ -128,7 +130,7 @@ if prompt := st.chat_input("How can I help you today?"):
                 # every node, so we can diff what changed since the last step.
                 for state in graph.stream(
                     initial_state,
-                    config={"recursion_limit": 35},
+                    config={"recursion_limit": 35} ,
                     stream_mode="values",
                 ):
                     final_state = state  # keep latest snapshot

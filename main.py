@@ -5,11 +5,12 @@ from typing import List, Literal, Optional
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+from langgraph.checkpoint.memory import MemorySaver
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import AIMessage, SystemMessage
 from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
 
@@ -50,6 +51,9 @@ orchestrator_llm = ChatGroq(model=MODEL_NAME, temperature=0).with_structured_out
 
 def orchestrator(state: GraphState) -> dict:
     print("\n--- [Orchestrator] Deciding next step ---")
+
+    # print(f" State messages : {state['messages']}")
+
     time.sleep(3)
 
     completed = [
@@ -106,7 +110,7 @@ When in doubt, prefer the KnowledgeAgent for semantic document questions rather 
     if decision.finished or decision.task is None:
         final_msg = decision.final_response or "All tasks completed successfully."
         print("  [Orchestrator] All done. Final response ready.")
-        return {"final_response": final_msg}
+        return {"final_response": final_msg , "messages": [AIMessage(content=final_msg)]}
 
     new_task_counter = state["task_counter"] + 1
     new_task = Task(
@@ -136,6 +140,8 @@ def orchestrator_route(state: GraphState) -> str:
 # =========================================================
 # BUILD GRAPH
 # =========================================================
+
+# checkpointer = MemorySaver()
 
 def build_graph():
     builder = StateGraph(GraphState)
@@ -169,7 +175,7 @@ if __name__ == "__main__":
     graph = build_graph()
 
     initial_state: GraphState = {
-        "user_query": "Search for Project_plan.md in my workspace, read it, create a notes folder, write a summary to notes/summary.txt, schedule a meeting on calendar called README Review for tomorrow at 10:00 AM, and email me the summary at chaitanyashinde545@gmail.com",
+        "user_query": "",
         "messages": [],
         "workspace_messages": [],
         "knowledge_messages": [],

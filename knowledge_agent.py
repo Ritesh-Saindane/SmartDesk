@@ -44,6 +44,8 @@ def rag_search(query: str) -> str:
             "No relevant information found in the knowledge base. "
             "The knowledge base may be empty, or try rephrasing your query."
         )
+    
+    # print("rag searched documents : -----> ",results)
 
     formatted: list[str] = []
     for i, r in enumerate(results, 1):
@@ -52,7 +54,7 @@ def rag_search(query: str) -> str:
             f"{r['text']}"
         )
 
-    print("rag searched documents : -----> ",formatted)
+    # print("rag searched documents : -----> ",formatted)
     return "\n\n---\n\n".join(formatted)
 
 knowledge_tools = [rag_search]
