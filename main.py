@@ -70,6 +70,9 @@ You must assign ONE task at a time to the most appropriate agent.
 
 User Query: {state["user_query"]}
 
+Current Chat Uploads:
+{json.dumps(state.get("uploaded_documents", []), indent=2)}
+
 Completed Tasks (with instructions):
 {json.dumps(completed, indent=2)}
 
@@ -86,12 +89,12 @@ Strict Rules:
 7. When you read a file, print its content in final response which you will get in payload.
 8. VERY IMP : AGENT DEMARCATION (CRITICAL):
    - WorkspaceAgent: Use ONLY for local file system operations (read, write, search files/folders) when the user specifies a path or wants to modify local files. Do NOT use this for answering questions about uploaded documents.
-   - KnowledgeAgent: Use ONLY for searching the knowledge base via RAG and answering knowledge questions. If the user asks about an "uploaded document", "uploaded file", "knowledge base", or asks a question that requires searching document contents, route it HERE.
+   - KnowledgeAgent: If chat_rag_enabled == True ({state.get('chat_rag_enabled', False)}) and the user asks a question that may require information from the uploaded documents, route the task HERE. 
    - ProductivityAgent: Use ONLY for external APIs: Emails, Google Calendar, Tasks, Google Docs, Drive, Telegram, Contacts. If the user asks to "draft an email" or "send an email", route it HERE, never to WorkspaceAgent.
 9. When instructing the ProductivityAgent to upload a file to Google Drive, you MUST provide the literal local file_path (e.g. './folder/file.txt'). Do not just provide the text content.
 10. Decide between WorkspaceAgent and KnowledgeAgent carefully.
 - Use WorkspaceAgent when the user explicitly asks to operate on a local file system file (e.g. read README.md, delete notes.txt, create report.pdf).
-- Use KnowledgeAgent when the user asks questions about the contents of their documents (e.g. "what is in the uploaded doc?", "summarize my knowledge base"). The KnowledgeAgent has access to semantic search (RAG) over the user's uploaded documents.
+- Use KnowledgeAgent when the user asks questions about the contents of their current chat uploads. The KnowledgeAgent has access to semantic search (RAG) over the documents uploaded in this chat.
 
 Examples:
 - "What do my notes say about LangGraph?"
@@ -175,6 +178,9 @@ if __name__ == "__main__":
     graph = build_graph()
 
     initial_state: GraphState = {
+        "chat_id": "cli_test_chat",
+        "chat_rag_enabled": False,
+        "uploaded_documents": [],
         "user_query": "",
         "messages": [],
         "workspace_messages": [],

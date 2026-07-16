@@ -1,15 +1,23 @@
 import os
 import shutil
+import uuid
 from langchain_core.messages import HumanMessage
 import streamlit as st
 from main import build_graph, GraphState
 
 st.set_page_config(page_title="SmartDesk AI", page_icon="🤖", layout="wide")
 
+if "chat_id" not in st.session_state:
+    st.session_state.chat_id = uuid.uuid4().hex[:6]
+if "chat_rag_enabled" not in st.session_state:
+    st.session_state.chat_rag_enabled = False
+if "uploaded_documents" not in st.session_state:
+    st.session_state.uploaded_documents = []
+
 # ── Sidebar: Knowledge Base Upload ────────────────────────────────────────────
 with st.sidebar:
-    st.title("📚 Knowledge Base")
-    st.caption("Upload documents so KnowledgeAgent can search them with RAG.")
+    st.title("📚 Current Chat Uploads")
+    st.caption("Upload documents to search them with RAG in this session.")
 
     uploaded = st.file_uploader(
         "Choose a document",
@@ -19,23 +27,28 @@ with st.sidebar:
 
     if uploaded:
         if st.button("⬆️ Upload & Index", use_container_width=True):
-            knowledge_base_dir = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "knowledge_base"
+            chat_id = st.session_state.chat_id
+            chat_uploads_dir = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "chat_uploads", f"chat_{chat_id}"
             )
-            os.makedirs(knowledge_base_dir, exist_ok=True)
-            save_path = os.path.join(knowledge_base_dir, uploaded.name)
+            os.makedirs(chat_uploads_dir, exist_ok=True)
+            save_path = os.path.join(chat_uploads_dir, uploaded.name)
 
             with st.spinner(f"Indexing {uploaded.name}…"):
                 try:
                     with open(save_path, "wb") as f:
                         shutil.copyfileobj(uploaded, f)
 
-                    from rag.indexer import index_file
-                    num_chunks = index_file(save_path)
+                    from rag.indexer import index_chat_file
+                    num_chunks = index_chat_file(save_path, chat_id)
+
+                    st.session_state.chat_rag_enabled = True
+                    if uploaded.name not in st.session_state.uploaded_documents:
+                        st.session_state.uploaded_documents.append(uploaded.name)
 
                     st.success(
                         f"✅ **{uploaded.name}** indexed!\n\n"
-                        f"**{num_chunks}** chunks stored in ChromaDB."
+                        f"**{num_chunks}** chunks stored for this chat."
                     )
                 except EnvironmentError as e:
                     st.error(f"Configuration error: {str(e)}")
@@ -44,18 +57,12 @@ with st.sidebar:
 
     st.divider()
 
-    kb_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge_base")
-    if os.path.exists(kb_path):
-        docs = [
-            f for f in os.listdir(kb_path)
-            if os.path.splitext(f)[1].lower() in {".pdf", ".txt", ".md", ".docx"}
-        ]
-        if docs:
-            st.subheader("📄 Indexed Documents")
-            for doc in docs:
-                st.markdown(f"- {doc}")
-        else:
-            st.info("No documents uploaded yet.")
+    if st.session_state.uploaded_documents:
+        st.subheader("📄 Uploaded in this chat")
+        for doc in st.session_state.uploaded_documents:
+            st.markdown(f"- {doc}")
+    else:
+        st.info("No documents uploaded yet.")
 
 
 # ── Main Chat Interface ───────────────────────────────────────────────────────
@@ -111,6 +118,9 @@ if prompt := st.chat_input("How can I help you today?"):
                 graph = build_graph()
 
                 initial_state = {
+                    "chat_id": st.session_state.chat_id,
+                    "chat_rag_enabled": st.session_state.chat_rag_enabled,
+                    "uploaded_documents": st.session_state.uploaded_documents,
                     "user_query": prompt,
                     "messages": [HumanMessage(content=prompt)],
                     "workspace_messages": [],

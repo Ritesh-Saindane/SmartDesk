@@ -30,6 +30,9 @@ class Artifact(BaseModel):
 
 
 class GraphState(TypedDict):
+    chat_id: str
+    chat_rag_enabled: bool
+    uploaded_documents: list[str]
     user_query: str
     messages: Annotated[list[AnyMessage], add_messages]
     workspace_messages: Annotated[list[AnyMessage], add_messages]

@@ -13,7 +13,7 @@ from state import GraphState, Artifact
 
 load_dotenv()
 MODEL_NAME = "openai/gpt-oss-120b"
-MAX_AGENT_STEPS = 3
+MAX_AGENT_STEPS = 5
 
 # =========================================================
 # TOOLS
