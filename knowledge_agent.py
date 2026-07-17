@@ -1,13 +1,13 @@
 import json
 import time
 from dotenv import load_dotenv
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import SystemMessage, ToolMessage, RemoveMessage
 from langchain_core.tools import tool
 from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from state import GraphState, Artifact
+from state import GraphState, Artifact, ArtifactType
 
 load_dotenv()
 MODEL_NAME = "openai/gpt-oss-120b"
@@ -68,11 +68,35 @@ def knowledge_agent(state: GraphState) -> dict:
     task = state["current_task"]
     print(f"\n--- [KnowledgeAgent] Executing {task.id} ---")
 
-    context = {
-        aid: state["artifacts"][aid].payload
-        for aid in task.context_artifacts
-        if aid in state["artifacts"]
-    }
+    # ── Build context from referenced artifacts ────────────────────────────────
+    # KnowledgeAgent supports two execution modes for RAW_CONTEXT artifacts:
+    #
+    # Mode 1 — Small document (payload inlined):
+    #   metadata["payload_inlined"] == True  →  reason directly over artifact.payload
+    #
+    # Mode 2 — Large document (payload intentionally omitted):
+    #   metadata["payload_inlined"] == False →  use metadata["path"] to access the
+    #   original file; token_count is already stored — never recompute it.
+    #
+    # Always use metadata["payload_inlined"] as the authoritative signal.
+    # Never check `if artifact.payload:` to determine whether content is present.
+    context = {}
+    for aid in task.context_artifacts:
+        if aid not in state["artifacts"]:
+            continue
+        art = state["artifacts"][aid]
+        if art.type == ArtifactType.RAW_CONTEXT:
+            inlined = art.metadata.get("payload_inlined", True)
+            if inlined:
+                # Mode 1: content is available inline
+                context[aid] = {"payload": art.payload, "metadata": art.metadata}
+            else:
+                # Mode 2: content was too large to inline; expose path so agent
+                # can fetch it via the appropriate tool or RAG search.
+                context[aid] = {"payload": None, "metadata": art.metadata}
+        else:
+            # Non-RAW_CONTEXT artifacts always have their payload available.
+            context[aid] = {"payload": art.payload, "metadata": art.metadata}
 
     has_tool_message = any(isinstance(m, ToolMessage) for m in state["knowledge_messages"])
     
@@ -87,6 +111,19 @@ Uploaded Documents: {json.dumps(state.get("uploaded_documents", []))}
 You have access to the user's personal knowledge base via the `rag_search` tool.
 The documents you search are ONLY the documents uploaded in the CURRENT CHAT.
 When calling `rag_search`, you MUST pass the Current Chat ID as the `chat_id` parameter.
+
+IMPORTANT — HANDLING CONTEXT ARTIFACTS:
+Some artifacts in your context may contain a RAW_CONTEXT document.
+
+Mode 1 (small document — payload present):
+- If context[artifact_id]["payload"] is not None, reason directly over that text.
+
+Mode 2 (large document — payload intentionally omitted):
+- If context[artifact_id]["payload"] is None AND metadata["payload_inlined"] is False,
+  the file was too large to inline. Use metadata["path"] (absolute path) to access
+  the document through the appropriate tool or RAG search.
+- Never fail simply because payload is None — the path in metadata is your fallback.
+- The token_count is already stored in metadata; do NOT recompute it.
 
 IMPORTANT RULES FOR RETRIEVAL & INTENT:
 You must classify the user's request into one of two intents before calling `rag_search`:
@@ -154,14 +191,16 @@ def knowledge_finalizer(state: GraphState) -> dict:
 
     artifact = Artifact(
         id=artifact_id,
-        type="knowledge_output",
+        type=ArtifactType.ANSWER,
         title=f"Output of {tool_name}",
-        description=f"Produced by KnowledgeAgent for {task.id} ,",
+        description=f"Produced by KnowledgeAgent for {task.id}",
         payload=payload,
     )
 
     task.status = "completed"
     print(f"  [KnowledgeAgent] Created artifact {artifact_id}.")
+
+    remove_msgs = [RemoveMessage(id=m.id) for m in state["knowledge_messages"] if m.id is not None]
 
     return {
         "artifacts": {artifact_id: artifact},
@@ -169,6 +208,7 @@ def knowledge_finalizer(state: GraphState) -> dict:
         "current_task": None,
         "artifact_counter": new_art_counter,
         "agent_steps": 0,
+        "knowledge_messages": remove_msgs,
         "logs": [f"KnowledgeAgent completed {task.id} -> {artifact_id}"],
     }
 

@@ -2,10 +2,10 @@ import json
 import time
 import sys
 from typing import List, Literal, Optional
-
+import os
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres import PostgresSaver
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -14,7 +14,7 @@ from langchain_core.messages import AIMessage, SystemMessage
 from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
 
-from state import GraphState, Task
+from state import GraphState, Task, ArtifactType
 from workspace_agent import build_workspace_subgraph
 from knowledge_agent import build_knowledge_subgraph
 from productivity_agent import build_productivity_subgraph
@@ -60,14 +60,43 @@ def orchestrator(state: GraphState) -> dict:
         {"id": t.id, "agent": t.agent, "status": t.status, "instruction": t.instruction}
         for t in state.get("completed_tasks", [])
     ]
-    artifact_summaries = [
-        {"id": a.id, "title": a.title, "description": a.description , "payload": a.payload}
-        for a in state.get("artifacts", {}).values()
-    ]
+
+    # ── Build artifact summaries for the Orchestrator prompt ───────────────────
+    # RAW_CONTEXT payloads are intentionally omitted for large documents to
+    # avoid exceeding LLM context limits while preserving planning ability.
+    # Use metadata["payload_inlined"] as the authoritative signal — never
+    # check `if artifact.payload:` directly to decide what to include.
+    # For all other artifact types (SUMMARY, ANSWER, STATUS, etc.), always
+    # include the payload so the Orchestrator can reason over the result.
+    artifact_summaries = []
+    for a in state.get("artifacts", {}).values():
+        summary = {
+            "id": a.id,
+            "type": a.type,
+            "title": a.title,
+            "description": a.description,
+            "metadata": a.metadata,
+        }
+        if a.type == ArtifactType.RAW_CONTEXT:
+            # Only inline if the metadata flag explicitly says so.
+            if a.metadata.get("payload_inlined") == True:
+                summary["payload"] = a.payload
+            # else: payload intentionally omitted — Orchestrator uses metadata instead
+        else:
+            # SUMMARY, ANSWER, STATUS, etc. always expose their payload.
+            summary["payload"] = a.payload
+        artifact_summaries.append(summary)
+
+    chat_history_str = ""
+    for m in state.get("messages", []):
+        role = "User" if m.type == "human" else "Assistant"
+        chat_history_str += f"{role}: {m.content}\n"
 
     prompt = f"""You are the Orchestrator of a hierarchical multi-agent AI system.
 You must assign ONE task at a time to the most appropriate agent.
 
+Conversation History:
+{chat_history_str}
 User Query: {state["user_query"]}
 
 Current Chat Uploads:
@@ -84,6 +113,15 @@ Strict Rules:
 2. Look at the completed task instructions carefully. If all tasks required to fulfill the user query are completed, set finished=True NOW.
 3. Do NOT repeat a task type that is already completed.
 4. Only assign tasks that are directly necessary to answer the user query.
+4a. ONE FILE PER TASK (CRITICAL for WorkspaceAgent reads):
+   Each WorkspaceAgent task must read AT MOST ONE file. If the user asks to
+   read or summarize multiple files (e.g. "read a.txt and b.txt"), you MUST
+   create a separate task for each file. Reading multiple files in one task
+   causes content loss because only one artifact is created per task.
+   Example — user says "read summary.txt and mumbai.txt":
+     task_1: WorkspaceAgent → read summary.txt
+     task_2: WorkspaceAgent → read mumbai.txt
+     task_3 (if needed): Orchestrator uses both artifacts to respond.
 5. Do NOT set finished=True if there are pending actions requested in the user query that have not been performed yet.
 6. When setting finished=True, you MUST write a final_response answering the user's query using the content/payload of the completed task artifacts.
 7. When you read a file, print its content in final response which you will get in payload.
@@ -104,6 +142,30 @@ Examples:
 - "What does my resume mention about machine learning?"
 
 When in doubt, prefer the KnowledgeAgent for semantic document questions rather than WorkspaceAgent.
+
+11. LARGE DOCUMENT HANDLING:
+If a raw_context artifact has metadata.payload_inlined=False, the file content was too
+large to read inline. In this case:
+
+  a) If the user's intent requires reasoning over the document (summarize, Q&A, extract, etc.):
+     Set finished=True immediately. Write a final_response telling the user:
+       "The file '[filename]' is too large to read directly (estimated [token_count] tokens).
+        To summarize or query it, please upload it using the 📎 upload button in this chat."
+     Do NOT route to KnowledgeAgent. The file is a local file and is NOT in the chat
+     knowledge base, so KnowledgeAgent cannot access it.
+
+  b) If the user's intent does NOT require reading the content (e.g. "upload to Drive"):
+     Continue the workflow normally. Use metadata["path"] to pass the file path to
+     ProductivityAgent or another appropriate agent.
+
+12. ANTI-LOOP RULES (CRITICAL):
+
+Rule 12a — Never re-read a file already captured as a raw_context artifact.
+  If a raw_context artifact already exists for a filename/path, DO NOT assign
+  WorkspaceAgent to read that file again. The read is done. Use artifact metadata.
+
+Rule 12b — If more than 2 tasks completed without resolving the user query,
+  set finished=True with the best available explanation rather than looping.
 """
 
     decision: OrchestratorDecision = orchestrator_llm.invoke(
@@ -143,8 +205,25 @@ def orchestrator_route(state: GraphState) -> str:
 # =========================================================
 # BUILD GRAPH
 # =========================================================
+import atexit
 
-# checkpointer = MemorySaver()
+DB_URI = os.getenv("DB_URI")
+
+checkpointer_cm = PostgresSaver.from_conn_string(DB_URI)
+checkpointer = checkpointer_cm.__enter__()
+checkpointer.setup()
+
+def cleanup_checkpointer():
+    print("Closing PostgresSaver connection pool...")
+    checkpointer_cm.__exit__(None, None, None)
+
+atexit.register(cleanup_checkpointer)
+
+def get_all_existing_threads():
+    all_threads = set()
+    for checkpoint in checkpointer.list(None):
+        all_threads.add(checkpoint.config["configurable"]["thread_id"])
+    return list(all_threads)
 
 def build_graph():
     builder = StateGraph(GraphState)
@@ -168,7 +247,7 @@ def build_graph():
     builder.add_edge("KnowledgeAgent", "Orchestrator")
     builder.add_edge("ProductivityAgent", "Orchestrator")
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 # =========================================================
 # ENTRY POINT
@@ -200,7 +279,10 @@ if __name__ == "__main__":
     print("  MULTI-AGENT LANGGRAPH — EXPLICIT NODES & TOOL LOOPS")
     print("=========================================================")
 
-    final_state = graph.invoke(initial_state, config={"recursion_limit": 35})
+    final_state = graph.invoke(initial_state, config={
+        "recursion_limit": 35,
+        "configurable": {"thread_id": "cli_test_chat"}
+    })
 
     print("\n=========================================================")
     print("  GRAPH FINISHED")

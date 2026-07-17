@@ -3,7 +3,7 @@ import shutil
 import uuid
 from langchain_core.messages import HumanMessage
 import streamlit as st
-from main import build_graph, GraphState
+from main import build_graph, GraphState, get_all_existing_threads
 
 st.set_page_config(page_title="SmartDesk AI", page_icon="🤖", layout="wide")
 
@@ -63,6 +63,37 @@ with st.sidebar:
             st.markdown(f"- {doc}")
     else:
         st.info("No documents uploaded yet.")
+
+    st.divider()
+    st.subheader("🕒 Previous Chats")
+    
+    try:
+        threads = get_all_existing_threads()
+        if not threads:
+            st.info("No previous chats found.")
+        else:
+            for t in threads:
+                # Disable the button if it's the current chat
+                is_current = (t == st.session_state.chat_id)
+                btn_label = f"💬 Chat: {t}" + (" (Current)" if is_current else "")
+                
+                if st.button(btn_label, key=f"btn_{t}", use_container_width=True, disabled=is_current):
+                    st.session_state.chat_id = t
+                    graph = build_graph()
+                    checkpoint_state = graph.get_state({"configurable": {"thread_id": t}})
+                    
+                    if checkpoint_state and hasattr(checkpoint_state, 'values') and checkpoint_state.values:
+                        st.session_state.messages = []
+                        for m in checkpoint_state.values.get("messages", []):
+                            role = "user" if m.type == "human" else "assistant"
+                            st.session_state.messages.append({"role": role, "content": m.content})
+                        
+                        st.session_state.uploaded_documents = checkpoint_state.values.get("uploaded_documents", [])
+                        st.session_state.chat_rag_enabled = checkpoint_state.values.get("chat_rag_enabled", False)
+                    
+                    st.rerun()
+    except Exception as e:
+        st.error(f"Could not load threads: {e}")
 
 
 # ── Main Chat Interface ───────────────────────────────────────────────────────
@@ -140,7 +171,10 @@ if prompt := st.chat_input("How can I help you today?"):
                 # every node, so we can diff what changed since the last step.
                 for state in graph.stream(
                     initial_state,
-                    config={"recursion_limit": 35} ,
+                    config={
+                        "recursion_limit": 35,
+                        "configurable": {"thread_id": st.session_state.chat_id}
+                    },
                     stream_mode="values",
                 ):
                     final_state = state  # keep latest snapshot

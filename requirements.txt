@@ -20,3 +20,4 @@ chromadb
 langchain-chroma
 langchain-huggingface
 torchvision
+langgraph.checkpoint.postgres

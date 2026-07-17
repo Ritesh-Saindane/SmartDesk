@@ -3,13 +3,13 @@ import json
 import time
 import requests
 from dotenv import load_dotenv
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import SystemMessage, ToolMessage, RemoveMessage
 from langchain_core.tools import tool
 from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from state import GraphState, Artifact
+from state import GraphState, Artifact, ArtifactType
 
 load_dotenv()
 MODEL_NAME = "openai/gpt-oss-120b"
@@ -504,7 +504,7 @@ def productivity_finalizer(state: GraphState) -> dict:
 
     artifact = Artifact(
         id=artifact_id,
-        type="productivity_output",
+        type=ArtifactType.STATUS,
         title=f"Output of {tool_name}",
         description=f"Produced by ProductivityAgent for {task.id}",
         payload=payload,
@@ -513,12 +513,15 @@ def productivity_finalizer(state: GraphState) -> dict:
     task.status = "completed"
     print(f"  [ProductivityAgent] Created artifact {artifact_id}.")
 
+    remove_msgs = [RemoveMessage(id=m.id) for m in state["productivity_messages"] if m.id is not None]
+
     return {
         "artifacts": {artifact_id: artifact},
         "completed_tasks": [task],
         "current_task": None,
         "artifact_counter": new_art_counter,
         "agent_steps": 0,
+        "productivity_messages": remove_msgs,
         "logs": [f"ProductivityAgent completed {task.id} -> {artifact_id}"],
     }
 

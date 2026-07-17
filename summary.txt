@@ -9,6 +9,6 @@
   - Planning – July 10  
   - Development – July 20  
   - Testing – July 25  
-  - Release – July 31
+  - Release – July 20
 - **Risks:** Potential API integration problems and possible delays in requirements gathering.
 - **Success Criteria:** Successful generation of summaries, creation of calendar events, and error‑free email notifications.
