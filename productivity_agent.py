@@ -73,7 +73,8 @@ def get_google_credentials():
         "https://www.googleapis.com/auth/calendar",
         "https://www.googleapis.com/auth/tasks",
         "https://www.googleapis.com/auth/drive.file",
-        "https://www.googleapis.com/auth/documents"
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/spreadsheets"
     ]
     creds = None
     if os.path.exists("token.json"):
@@ -225,7 +226,7 @@ def list_tasks() -> str:
         return f"Error reading tasks: {str(e)}"
 
 @tool
-def upload_to_drive(file_path: str, mime_type: str = None) -> str:
+def upload_to_drive(file_path: str, mime_type: str | None = None) -> str:
     """Upload a local file to Google Drive."""
     print(f"  [Tool] upload_to_drive({file_path})")
     try:
@@ -439,6 +440,55 @@ def lookup_contact(name: str) -> str:
         return f"Error reading contact book: {str(e)}"
 
 @tool
+def create_sheet(title: str) -> str:
+    """Create a new Google Sheet."""
+    print(f"  [Tool] create_sheet({title})")
+    try:
+        service = get_google_service("sheets", "v4")
+        if not service:
+            return "Error: Missing Google credentials."
+        spreadsheet = {"properties": {"title": title}}
+        spreadsheet = service.spreadsheets().create(body=spreadsheet, fields="spreadsheetId").execute()
+        return f"Sheet created successfully. ID: {spreadsheet.get('spreadsheetId')}"
+    except Exception as e:
+        return f"Error creating sheet: {str(e)}"
+
+@tool
+def read_sheet(spreadsheet_id: str, range_name: str) -> str:
+    """Read data from a Google Sheet. Range should be like 'Sheet1!A1:D5' or just 'Sheet1'."""
+    print(f"  [Tool] read_sheet({spreadsheet_id}, {range_name})")
+    try:
+        service = get_google_service("sheets", "v4")
+        if not service:
+            return "Error: Missing Google credentials."
+        result = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+        values = result.get("values", [])
+        if not values:
+            return "No data found."
+        return "\\n".join([", ".join([str(cell) for cell in row]) for row in values])
+    except Exception as e:
+        return f"Error reading sheet: {str(e)}"
+
+@tool
+def append_to_sheet(spreadsheet_id: str, range_name: str, values: list) -> str:
+    """Append a row (or rows) of data to a Google Sheet. `values` should be a list of lists, e.g. [['A', 'B'], ['C', 'D']]."""
+    print(f"  [Tool] append_to_sheet({spreadsheet_id}, {range_name})")
+    try:
+        service = get_google_service("sheets", "v4")
+        if not service:
+            return "Error: Missing Google credentials."
+        body = {"values": values}
+        result = service.spreadsheets().values().append(
+            spreadsheetId=spreadsheet_id,
+            range=range_name,
+            valueInputOption="USER_ENTERED",
+            body=body
+        ).execute()
+        return f"Appended {result.get('updates', {}).get('updatedCells', 0)} cells."
+    except Exception as e:
+        return f"Error appending to sheet: {str(e)}"
+
+@tool
 def fetch_unread_emails(limit: int = 5) -> str:
     """Fetch unread emails from Gmail inbox via IMAP."""
     import imaplib
@@ -506,7 +556,7 @@ def reply_to_email(to: str, subject: str, body: str) -> str:
         subject = f"Re: {subject}"
     return send_email.invoke({"to": to, "subject": subject, "body": body})
 
-productivity_tools = [send_email, fetch_unread_emails, reply_to_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive, send_telegram_message, create_doc, read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file, lookup_contact]
+productivity_tools = [send_email, fetch_unread_emails, reply_to_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive, send_telegram_message, create_doc, read_doc, append_to_doc, create_sheet, read_sheet, append_to_sheet, reschedule_event, delete_event, share_drive_file, lookup_contact]
 productivity_llm = get_llm(model_name=MODEL_NAME, temperature=0).bind_tools(productivity_tools)
 productivity_tool_node = ToolNode(productivity_tools, messages_key="productivity_messages")
 

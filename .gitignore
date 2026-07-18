@@ -6,6 +6,8 @@ __pycache__/
 *.log
 credentials.json
 token.json
+token.json.bak
+*.bak
 secretForGoogle.txt
 email_to_chaitanyashinde545.txt
 *.tar.gz
@@ -18,3 +20,5 @@ vectorstores/
 memory/
 chat_uploads/
 chat_chroma/
+client_secret*
+*.apps.googleusercontent.com.json

@@ -1,22 +1,18 @@
 # rag/embeddings.py
 # Provides the shared HuggingFace embedding model instance.
 
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
+import os
 
-_embedding_model: HuggingFaceEmbeddings | None = None
+_embedding_model: HuggingFaceEndpointEmbeddings | None = None
 
-def get_embedding_model() -> HuggingFaceEmbeddings:
-    """Return the singleton HuggingFace embedding model.
-
-    Lazily instantiated so that it only loads the model into memory
-    when actually needed.
-    """
+def get_embedding_model() -> HuggingFaceEndpointEmbeddings:
+    """Return the singleton HuggingFace API embedding model."""
     global _embedding_model
     if _embedding_model is None:
-        _embedding_model = HuggingFaceEmbeddings(
-            model_name="all-MiniLM-L6-v2",
-            encode_kwargs={
-        "normalize_embeddings": True
-    }
+        _embedding_model = HuggingFaceEndpointEmbeddings(
+            model="sentence-transformers/all-MiniLM-L6-v2",
+            task="feature-extraction",
+            huggingfacehub_api_token=os.getenv("HUGGINGFACE_API_KEY", "hf_dummy_key")
         )
     return _embedding_model
