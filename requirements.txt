@@ -1,9 +1,12 @@
 langgraph
-langchain_groq
-langchain_core
+langgraph-checkpoint-postgres
+langchain-groq
+langchain-core
 langchain-community
 langchain-text-splitters
 langchain-google-genai
+langchain-chroma
+langchain-huggingface
 pydantic
 python-dotenv
 google-api-python-client
@@ -17,6 +20,7 @@ python-multipart
 pypdf
 docx2txt
 chromadb
-langchain-chroma
-langchain-huggingface
+sentence-transformers
 torchvision
+psycopg
+psycopg-pool

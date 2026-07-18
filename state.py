@@ -1,4 +1,5 @@
 import operator
+from enum import Enum
 from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict
 from pydantic import BaseModel, Field
 from langchain_core.messages import AnyMessage
@@ -20,9 +21,21 @@ class Task(BaseModel):
     status: str = "pending"
 
 
+# ── Artifact Type Enum ─────────────────────────────────────────────────────────
+# Using an enum instead of raw strings prevents typos and makes artifact types
+# discoverable across the codebase.
+class ArtifactType(str, Enum):
+    RAW_CONTEXT = "raw_context"        # File contents read from disk
+    SUMMARY = "summary"                # Summarized output
+    ANSWER = "answer"                  # Direct answer to a question
+    ACTION_ITEMS = "action_items"      # Extracted action items
+    SEARCH_RESULTS = "search_results"  # RAG / search results
+    STATUS = "status"                  # Status / confirmation message
+
+
 class Artifact(BaseModel):
     id: str
-    type: str
+    type: ArtifactType
     title: str
     description: str
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -30,6 +43,9 @@ class Artifact(BaseModel):
 
 
 class GraphState(TypedDict):
+    chat_id: str
+    chat_rag_enabled: bool
+    uploaded_documents: list[str]
     user_query: str
     messages: Annotated[list[AnyMessage], add_messages]
     workspace_messages: Annotated[list[AnyMessage], add_messages]
@@ -43,3 +59,4 @@ class GraphState(TypedDict):
     task_counter: int
     artifact_counter: int
     agent_steps: int  # counts tool loops within the current agent task
+    long_term_memory: list

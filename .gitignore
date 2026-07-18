@@ -14,3 +14,7 @@ email_to_chaitanyashinde545.txt
 .infoForAndAboutDevs/
 chroma_db/
 TestOutput/
+vectorstores/
+memory/
+chat_uploads/
+chat_chroma/

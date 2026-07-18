@@ -10,7 +10,7 @@ from typing import List
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from rag.chroma_client import get_vectorstore
+from rag.chroma_client import get_vectorstore, get_chat_vectorstore
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -92,6 +92,46 @@ def index_file(file_path: str) -> int:
     vectorstore.add_documents(chunks)
 
     print(f"  [Indexer] Indexed '{filename}' → {len(chunks)} chunks stored in ChromaDB.")
+    return len(chunks)
+
+
+def index_chat_file(file_path: str, chat_id: str) -> int:
+    """Load, chunk, embed and store a single file into a chat-specific ChromaDB.
+
+    Args:
+        file_path: Absolute or relative path to the document.
+        chat_id: ID of the current chat session.
+
+    Returns:
+        Number of chunks indexed.
+    """
+    file_path = os.path.abspath(file_path)
+    filename = os.path.basename(file_path)
+
+    # ── Load ──────────────────────────────────────────────────────────────────
+    docs = _load_document(file_path)
+    if not docs:
+        raise ValueError(f"No content could be extracted from '{filename}'.")
+
+    # ── Split ─────────────────────────────────────────────────────────────────
+    chunks = _splitter.split_documents(docs)
+
+    # ── Enrich metadata ───────────────────────────────────────────────────────
+    for i, chunk in enumerate(chunks):
+        chunk.metadata.update(
+            {
+                "filename": filename,
+                "path": file_path,
+                "chunk_index": i,
+                "chat_id": chat_id,
+            }
+        )
+
+    # ── Embed and store ───────────────────────────────────────────────────────
+    vectorstore = get_chat_vectorstore(chat_id)
+    vectorstore.add_documents(chunks)
+
+    print(f"  [Indexer] Indexed '{filename}' for chat '{chat_id}' → {len(chunks)} chunks stored.")
     return len(chunks)
 
 

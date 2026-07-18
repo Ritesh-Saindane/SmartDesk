@@ -37,46 +37,20 @@ def health():
 
 # ── Upload & Index ────────────────────────────────────────────────────────────
 
-@app.post("/knowledge/upload", summary="Upload and index a document")
-async def upload_document(file: UploadFile = File(...)):
-    """
-    Accept a document, save it to `knowledge_base/`, immediately index it
-    into ChromaDB, and return the result.
+from app.application import upload_document
 
+@app.post("/knowledge/upload", summary="Upload and index a document")
+async def upload_document_api(file: UploadFile = File(...)):
+    """
+    Accept a document, immediately index it into ChromaDB, and return the result.
     Supported formats: PDF, TXT, MD, DOCX
     """
-    ext = os.path.splitext(file.filename)[1].lower()
-
-    if ext not in SUPPORTED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Unsupported file type '{ext}'. "
-                f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
-            ),
-        )
-
-    save_path = os.path.join(KNOWLEDGE_BASE_DIR, file.filename)
-
-    # ── Save to disk ──────────────────────────────────────────────────────────
     try:
-        with open(save_path, "wb") as out_file:
-            shutil.copyfileobj(file.file, out_file)
+        num_chunks = upload_document(file.file, file.filename)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save file: {str(e)}"
-        )
-
-    # ── Index into ChromaDB ───────────────────────────────────────────────────
-    try:
-        num_chunks = index_file(save_path)
-    except Exception as e:
-        # Clean up the saved file if indexing fails so state stays consistent
-        if os.path.exists(save_path):
-            os.remove(save_path)
-        raise HTTPException(
-            status_code=500, detail=f"Failed to index file: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
 
     return JSONResponse(
         {

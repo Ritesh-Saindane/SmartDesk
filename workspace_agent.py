@@ -2,17 +2,27 @@ import os
 import json
 import time
 from dotenv import load_dotenv
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage, RemoveMessage
 from langchain_core.tools import tool
 from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from state import GraphState, Artifact
+from state import GraphState, Artifact, ArtifactType
+
+# ── RAW_CONTEXT scalability ────────────────────────────────────────────────────
+# Large file contents are intentionally omitted from the artifact payload to
+# avoid exceeding LLM context limits while preserving planning ability.
+# The Orchestrator uses metadata["payload_inlined"] as the authoritative signal.
+MAX_INLINE_CONTEXT_TOKENS = 5000
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate: ~4 characters per token (computed once at ingestion)."""
+    return len(text) // 4
 
 load_dotenv()
 MODEL_NAME = "openai/gpt-oss-120b"
-MAX_AGENT_STEPS = 3
+MAX_AGENT_STEPS = 5
 
 # =========================================================
 # TOOLS
@@ -31,9 +41,28 @@ def read_file(path: str) -> str:
             content = f.read()
         if not content.strip():
             return f"File is empty -> {path}"
+
+        # ── Token-limit guard ──────────────────────────────────────────────────
+        # If the file is too large to inline, return a structured error instead
+        # of the full content. This prevents the large text from entering
+        # workspace_messages and causing 413 / context-overflow errors.
+        # The workspace_finalizer detects this prefix and creates a proper
+        # RAW_CONTEXT artifact with the path stored in metadata.
+        token_count = _estimate_tokens(content)
+        if token_count > MAX_INLINE_CONTEXT_TOKENS:
+            abs_path = os.path.abspath(path)
+            print(f"  [Tool] read_file: file too large ({token_count} tokens) — returning error.")
+            return (
+                f"FILE_TOO_LARGE::{abs_path}::{token_count}\n"
+                f"The file '{os.path.basename(path)}' is too large to read inline "
+                f"({token_count} estimated tokens, limit is {MAX_INLINE_CONTEXT_TOKENS}). "
+                f"To summarize or query this file, please upload it using the chat upload button."
+            )
+
         return content
     except Exception as e:
         return f"Error reading file: {str(e)}"
+
 
 @tool
 def search_file(name: str) -> str:
@@ -103,7 +132,13 @@ Task: {task.instruction}
 Expected Output: {task.expected_output}
 Context: {json.dumps(context)}
 
-Use the available tools to complete the task. You may call multiple tools if needed."""
+Use the available tools to complete the task. You may call multiple tools if needed.
+
+IMPORTANT: If a tool returns a message starting with FILE_TOO_LARGE::, the file is too
+large to read inline. Do NOT attempt any other tool calls. Simply respond with a short
+confirmation that the file was too large and stop — the system will handle it.
+
+IMPORTANT: Do NOT hallucinate tools to return the expected output (e.g. do not try to call a tool named 'raw_context'). When you are done using the actual available tools (read_file, write_file, etc.), simply write your final response as plain text."""
 
     if state["agent_steps"] == 0:
         messages = [SystemMessage(content=sys_prompt)]
@@ -124,6 +159,7 @@ def workspace_route(state: GraphState) -> str:
     if state["agent_steps"] >= MAX_AGENT_STEPS:
         print("  [WorkspaceAgent] Max steps reached, forcing finalize.")
         return "WorkspaceFinalizer"
+
     last_msg = state["workspace_messages"][-1]
     if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
         return "WorkspaceToolNode"
@@ -131,37 +167,96 @@ def workspace_route(state: GraphState) -> str:
 
 def workspace_finalizer(state: GraphState) -> dict:
     print("  [WorkspaceAgent] Finalizing task.")
-    last_msg = state["workspace_messages"][-1]
-
-    if isinstance(last_msg, ToolMessage):
-        payload = last_msg.content
-        tool_name = last_msg.name
-    else:
-        payload = last_msg.content
-        tool_name = "direct_response"
-
+    
     task = state["current_task"]
-    new_art_counter = state["artifact_counter"] + 1
-    artifact_id = f"art_{new_art_counter}"
+    new_art_counter = state["artifact_counter"]
+    artifacts_to_add = {}
 
-    artifact = Artifact(
-        id=artifact_id,
-        type="workspace_output",
-        title=f"Output of {tool_name}",
-        description=f"Produced by WorkspaceAgent for {task.id}",
-        payload=payload,
-    )
+    # 1. Scan for ALL read_file ToolMessages to create RAW_CONTEXT artifacts
+    for msg in state["workspace_messages"]:
+        if isinstance(msg, ToolMessage) and msg.name == "read_file":
+            raw_payload = msg.content
+            
+            new_art_counter += 1
+            artifact_id = f"art_{new_art_counter}"
+
+            if raw_payload.startswith("FILE_TOO_LARGE::"):
+                # Format: FILE_TOO_LARGE::<abs_path>::<token_count>\n<human message>
+                parts = raw_payload.split("::", 2)
+                file_path = parts[1] if len(parts) > 1 else ""
+                try:
+                    token_count = int(parts[2].split("\n", 1)[0]) if len(parts) > 2 else 0
+                except ValueError:
+                    token_count = 0
+                too_large = True
+                payload = None
+            else:
+                token_count = _estimate_tokens(raw_payload)
+                too_large = token_count > MAX_INLINE_CONTEXT_TOKENS
+                
+                # Recover file path from the tool call that triggered this message
+                file_path = ""
+                for m in state["workspace_messages"]:
+                    if hasattr(m, "tool_calls") and m.tool_calls:
+                        for tc in m.tool_calls:
+                            if tc["id"] == msg.tool_call_id:
+                                file_path = os.path.abspath(tc["args"].get("path", ""))
+                                break
+                    if file_path:
+                        break
+                payload = raw_payload if not too_large else None
+
+            metadata = {
+                "path": file_path,
+                "filename": os.path.basename(file_path) if file_path else "",
+                "token_count": token_count,
+                "payload_inlined": not too_large,
+                "too_large": too_large,
+            }
+            title = f"File contents: {metadata['filename']}"
+            description = f"RAW_CONTEXT produced by WorkspaceAgent for {task.id}. payload_inlined={not too_large}."
+
+            artifacts_to_add[artifact_id] = Artifact(
+                id=artifact_id,
+                type=ArtifactType.RAW_CONTEXT,
+                title=title,
+                description=description,
+                metadata=metadata,
+                payload=payload,
+            )
+            print(f"  [WorkspaceAgent] Created artifact {artifact_id} (type={ArtifactType.RAW_CONTEXT.value}).")
+            if too_large:
+                print(f"  [WorkspaceAgent] File too large ({token_count} tokens) — payload omitted, path stored in metadata.")
+
+    # 2. Create a STATUS artifact for the final LLM text response ONLY IF no file was read.
+    # If we already created RAW_CONTEXT artifacts for file reads, we don't need a redundant STATUS artifact.
+    last_msg = state["workspace_messages"][-1]
+    if not isinstance(last_msg, ToolMessage) and len(artifacts_to_add) == 0:
+        new_art_counter += 1
+        artifact_id = f"art_{new_art_counter}"
+        artifacts_to_add[artifact_id] = Artifact(
+            id=artifact_id,
+            type=ArtifactType.STATUS,
+            title="Output of direct_response",
+            description=f"Produced by WorkspaceAgent for {task.id}",
+            metadata={},
+            payload=last_msg.content,
+        )
+        print(f"  [WorkspaceAgent] Created artifact {artifact_id} (type={ArtifactType.STATUS.value}).")
 
     task.status = "completed"
-    print(f"  [WorkspaceAgent] Created artifact {artifact_id}.")
+
+    # 3. Clean slate for next task — remove all messages from the current task
+    remove_msgs = [RemoveMessage(id=m.id) for m in state["workspace_messages"] if m.id is not None]
 
     return {
-        "artifacts": {artifact_id: artifact},
+        "artifacts": artifacts_to_add,
         "completed_tasks": [task],
         "current_task": None,
         "artifact_counter": new_art_counter,
         "agent_steps": 0,
-        "logs": [f"WorkspaceAgent completed {task.id} -> {artifact_id}"],
+        "workspace_messages": remove_msgs,
+        "logs": [f"WorkspaceAgent completed {task.id} -> {len(artifacts_to_add)} artifacts"],
     }
 
 def build_workspace_subgraph():

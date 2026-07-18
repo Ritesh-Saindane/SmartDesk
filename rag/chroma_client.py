@@ -30,3 +30,19 @@ def get_vectorstore() -> Chroma:
         embedding_function=get_embedding_model(),
         persist_directory=CHROMA_DB_DIR,
     )
+
+
+def get_chat_vectorstore(chat_id: str) -> Chroma:
+    """Return a Chroma vectorstore connected to a chat-specific collection.
+
+    Stores the collection in chat_chroma/chat_<chat_id> to ensure isolation
+    per chat.
+    """
+    chat_chroma_dir = os.path.join(_PROJECT_ROOT, "chat_chroma", f"chat_{chat_id}")
+    os.makedirs(chat_chroma_dir, exist_ok=True)
+
+    return Chroma(
+        collection_name=f"chat_{chat_id}",
+        embedding_function=get_embedding_model(),
+        persist_directory=chat_chroma_dir,
+    )

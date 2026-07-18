@@ -7,7 +7,7 @@ os.environ["HEADLESS_TEST"] = "1"
 
 load_dotenv()
 
-from main import build_graph
+from graph import build_graph
 
 def run_test(test_name, query):
     print(f"\n=========================================================")
@@ -33,7 +33,10 @@ def run_test(test_name, query):
     }
     
     try:
-        final_state = graph.invoke(initial_state, config={"recursion_limit": 50})
+        final_state = graph.invoke(initial_state, config={
+            "recursion_limit": 50,
+            "configurable": {"thread_id": "productivity_test"}
+        })
         print("\n  --- TEST COMPLETE ---")
         print(f"  Final Response  : {final_state.get('final_response')}")
         print(f"  Tasks Completed : {len(final_state.get('completed_tasks', []))}")

@@ -1,39 +1,38 @@
 import json
 import time
 from dotenv import load_dotenv
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import SystemMessage, ToolMessage, RemoveMessage
 from langchain_core.tools import tool
 from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from state import GraphState, Artifact
+from state import GraphState, Artifact, ArtifactType
 
 load_dotenv()
 MODEL_NAME = "openai/gpt-oss-120b"
-MAX_AGENT_STEPS = 5
+MAX_AGENT_STEPS = 3
 
 # =========================================================
 # TOOLS
-# =========================================================
+from typing import Literal
 
 @tool
-def rag_search(query: str) -> str:
-    """Search the knowledge base for relevant information using semantic similarity.
+def rag_search(chat_id: str, query: str, mode: Literal["overview", "semantic"]) -> str:
+    """Search the current chat's knowledge base for relevant information or summaries.
 
-    Use this tool whenever:
-    - The user asks about a document they have uploaded.
-    - The question might be answerable from user-provided files in the knowledge base.
-    - You are unsure whether the knowledge base contains relevant information
-      (it is better to check than to guess).
-
-    Do NOT use this tool for general knowledge questions (e.g. 'What is Python?')
-    unless the user explicitly says the answer is in their documents.
+    IMPORTANT: 
+    If mode == 'overview':
+      - The `query` parameter should be the specific filename of the document to overview.
+      - If there's only one uploaded document, you can leave it blank or pass its name.
+    If mode == 'semantic':
+      - Always pass the COMPLETE natural-language user question as the `query` argument.
+      - Do NOT reduce the query to generic words like "document", "pdf", or "summary".
     """
-    print(f"  [Tool] rag_search({query})")
+    print(f"  [Tool] rag_search(chat_id={chat_id}, query={query}, mode={mode})")
     try:
         from rag.retriever import retrieve
-        results = retrieve(query, k=5)
+        results = retrieve(chat_id, query, mode, k=5)
     except EnvironmentError as e:
         return f"RAG unavailable: {str(e)}"
     except Exception as e:
@@ -54,7 +53,7 @@ def rag_search(query: str) -> str:
             f"{r['text']}"
         )
 
-    # print("rag searched documents : -----> ",formatted)
+    print("rag searched documents : -----> ",formatted)
     return "\n\n---\n\n".join(formatted)
 
 knowledge_tools = [rag_search]
@@ -69,28 +68,87 @@ def knowledge_agent(state: GraphState) -> dict:
     task = state["current_task"]
     print(f"\n--- [KnowledgeAgent] Executing {task.id} ---")
 
-    context = {
-        aid: state["artifacts"][aid].payload
-        for aid in task.context_artifacts
-        if aid in state["artifacts"]
-    }
+    # ── Build context from referenced artifacts ────────────────────────────────
+    # KnowledgeAgent supports two execution modes for RAW_CONTEXT artifacts:
+    #
+    # Mode 1 — Small document (payload inlined):
+    #   metadata["payload_inlined"] == True  →  reason directly over artifact.payload
+    #
+    # Mode 2 — Large document (payload intentionally omitted):
+    #   metadata["payload_inlined"] == False →  use metadata["path"] to access the
+    #   original file; token_count is already stored — never recompute it.
+    #
+    # Always use metadata["payload_inlined"] as the authoritative signal.
+    # Never check `if artifact.payload:` to determine whether content is present.
+    context = {}
+    for aid in task.context_artifacts:
+        if aid not in state["artifacts"]:
+            continue
+        art = state["artifacts"][aid]
+        if art.type == ArtifactType.RAW_CONTEXT:
+            inlined = art.metadata.get("payload_inlined", True)
+            if inlined:
+                # Mode 1: content is available inline
+                context[aid] = {"payload": art.payload, "metadata": art.metadata}
+            else:
+                # Mode 2: content was too large to inline; expose path so agent
+                # can fetch it via the appropriate tool or RAG search.
+                context[aid] = {"payload": None, "metadata": art.metadata}
+        else:
+            # Non-RAW_CONTEXT artifacts always have their payload available.
+            context[aid] = {"payload": art.payload, "metadata": art.metadata}
 
+    has_tool_message = any(isinstance(m, ToolMessage) for m in state["knowledge_messages"])
+    
     sys_prompt = f"""You are KnowledgeAgent. You handle summarization, research, writing tasks, and document Q&A.
 
 Task: {task.instruction}
 Expected Output: {task.expected_output}
 Context (artifact payloads from prior tasks): {json.dumps(context)}
+Current Chat ID: {state.get("chat_id", "unknown")}
+Uploaded Documents: {json.dumps(state.get("uploaded_documents", []))}
 
 You have access to the user's personal knowledge base via the `rag_search` tool.
-Use `rag_search` whenever:
-- The user asks about a document, file, or topic they may have uploaded.
-- The question is specific enough that a personal knowledge base might contain the answer.
-- You are unsure — it is always better to check the knowledge base than to guess.
+The documents you search are ONLY the documents uploaded in the CURRENT CHAT.
+When calling `rag_search`, you MUST pass the Current Chat ID as the `chat_id` parameter.
+
+IMPORTANT — HANDLING CONTEXT ARTIFACTS:
+Some artifacts in your context may contain a RAW_CONTEXT document.
+
+Mode 1 (small document — payload present):
+- If context[artifact_id]["payload"] is not None, reason directly over that text.
+
+Mode 2 (large document — payload intentionally omitted):
+- If context[artifact_id]["payload"] is None AND metadata["payload_inlined"] is False,
+  the file was too large to inline. Use metadata["path"] (absolute path) to access
+  the document through the appropriate tool or RAG search.
+- Never fail simply because payload is None — the path in metadata is your fallback.
+- The token_count is already stored in metadata; do NOT recompute it.
+
+IMPORTANT RULES FOR RETRIEVAL & INTENT:
+You must classify the user's request into one of two intents before calling `rag_search`:
+
+1. OVERVIEW MODE: Use "overview" when the user wants to understand the uploaded document as a whole.
+   - Examples: "summarize the document", "explain the document", "review the document", "what is this about", "tell me what this file contains", "give me the gist", "describe this document".
+   - Rule for multiple documents: If there are multiple documents uploaded and the user requests an overview WITHOUT specifying which document, DO NOT guess. DO NOT call rag_search. Instead, ask the user a clarification question listing the available documents.
+   - If only one document is uploaded, or if the user specified a document, call `rag_search` with mode="overview".
+   - When calling with mode="overview", pass the specific filename as the `query` parameter (or leave it blank if only one document exists).
+
+2. SEMANTIC MODE: Use "semantic" when the user asks about specific information contained in the uploaded document.
+   - Examples: "What does it say about Mumbai?", "Explain deadlocks", "What are the interview questions?", "Where is Haji Ali discussed?"
+   - When calling with mode="semantic", you MUST pass the complete natural-language user question as the `query`. Do NOT reduce it to generic words like "document" or "pdf".
+
+STRICT TOOL EXECUTION RULES:
+- If no ToolMessage exists yet, decide whether retrieval is needed.
+- If a ToolMessage already exists (meaning you have already received search results):
+   - NEVER call `rag_search` again. Each task should invoke `rag_search` at most once.
+   - Generate the final answer from the retrieved chunks.
+   - If the retrieved context is insufficient, explicitly state that instead of searching again.
+- Answer ONLY using the retrieved context. Do not invent facts.
 
 If the question is clearly general knowledge (e.g., 'What is machine learning?'),
 answer it directly without calling any tool.
-
-You may call multiple tools if needed to fully complete the task."""
+"""
 
     if state["agent_steps"] == 0:
         messages = [SystemMessage(content=sys_prompt)]
@@ -133,7 +191,7 @@ def knowledge_finalizer(state: GraphState) -> dict:
 
     artifact = Artifact(
         id=artifact_id,
-        type="knowledge_output",
+        type=ArtifactType.ANSWER,
         title=f"Output of {tool_name}",
         description=f"Produced by KnowledgeAgent for {task.id}",
         payload=payload,
@@ -142,12 +200,15 @@ def knowledge_finalizer(state: GraphState) -> dict:
     task.status = "completed"
     print(f"  [KnowledgeAgent] Created artifact {artifact_id}.")
 
+    remove_msgs = [RemoveMessage(id=m.id) for m in state["knowledge_messages"] if m.id is not None]
+
     return {
         "artifacts": {artifact_id: artifact},
         "completed_tasks": [task],
         "current_task": None,
         "artifact_counter": new_art_counter,
         "agent_steps": 0,
+        "knowledge_messages": remove_msgs,
         "logs": [f"KnowledgeAgent completed {task.id} -> {artifact_id}"],
     }
 
