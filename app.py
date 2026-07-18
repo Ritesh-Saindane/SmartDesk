@@ -3,7 +3,9 @@ import shutil
 import uuid
 from langchain_core.messages import HumanMessage
 import streamlit as st
+import threading
 from main import build_graph, GraphState, get_all_existing_threads
+from memory import retrieve_memories, store_memories
 
 st.set_page_config(page_title="SmartDesk AI", page_icon="🤖", layout="wide")
 
@@ -148,6 +150,16 @@ if prompt := st.chat_input("How can I help you today?"):
             try:
                 graph = build_graph()
 
+                try:
+                    memories = retrieve_memories(
+                        user_id="default_user",
+                        query=prompt,
+                        limit=5
+                    )
+                except Exception as e:
+                    memories = []
+                    st.warning(f"Memory retrieval failed: {e}")
+
                 initial_state = {
                     "chat_id": st.session_state.chat_id,
                     "chat_rag_enabled": st.session_state.chat_rag_enabled,
@@ -165,7 +177,9 @@ if prompt := st.chat_input("How can I help you today?"):
                     "task_counter": 0,
                     "artifact_counter": 0,
                     "agent_steps": 0,
+                    "long_term_memory": memories,
                 }
+
 
                 # stream_mode="values" → yields the FULL state snapshot after
                 # every node, so we can diff what changed since the last step.
@@ -270,6 +284,21 @@ if prompt := st.chat_input("How can I help you today?"):
             st.session_state.messages.append(
                 {"role": "assistant", "content": response_text}
             )
+
+            # Store interaction in long term memory (asynchronously)
+            try:
+                mem_messages = [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": response_text}
+                ]
+                threading.Thread(
+                    target=store_memories, 
+                    args=(mem_messages, "default_user"),
+                    daemon=True
+                ).start()
+            except Exception as e:
+                st.warning(f"Memory storage failed: {e}")
+
 
         elif not final_state:
             err = "An error occurred. Please try again."

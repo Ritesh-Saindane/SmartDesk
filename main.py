@@ -92,11 +92,21 @@ def orchestrator(state: GraphState) -> dict:
         role = "User" if m.type == "human" else "Assistant"
         chat_history_str += f"{role}: {m.content}\n"
 
+    long_term_mem_str = ""
+    if state.get("long_term_memory"):
+        long_term_mem_str = "Long-Term Memory (Relevant facts about the user from past chats):\n"
+        for m in state["long_term_memory"]:
+            if isinstance(m, dict) and "memory" in m:
+                long_term_mem_str += f"- {m['memory']}\n"
+            else:
+                long_term_mem_str += f"- {str(m)}\n"
+
     prompt = f"""You are the Orchestrator of a hierarchical multi-agent AI system.
 You must assign ONE task at a time to the most appropriate agent.
 
 Conversation History:
 {chat_history_str}
+{long_term_mem_str}
 User Query: {state["user_query"]}
 
 Current Chat Uploads:
@@ -107,6 +117,7 @@ Completed Tasks (with instructions):
 
 Available Artifacts:
 {json.dumps(artifact_summaries, indent=2)}
+
 
 Strict Rules:
 1. Assign exactly ONE next task to WorkspaceAgent, KnowledgeAgent, or ProductivityAgent.

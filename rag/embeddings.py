@@ -14,6 +14,9 @@ def get_embedding_model() -> HuggingFaceEmbeddings:
     global _embedding_model
     if _embedding_model is None:
         _embedding_model = HuggingFaceEmbeddings(
-            model_name="all-MiniLM-L6-v2"
+            model_name="all-MiniLM-L6-v2",
+            encode_kwargs={
+        "normalize_embeddings": True
+    }
         )
     return _embedding_model

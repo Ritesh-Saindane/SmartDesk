@@ -59,3 +59,4 @@ class GraphState(TypedDict):
     task_counter: int
     artifact_counter: int
     agent_steps: int  # counts tool loops within the current agent task
+    long_term_memory: list
