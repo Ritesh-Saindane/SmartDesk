@@ -3,7 +3,7 @@ import time
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage, ToolMessage, RemoveMessage
 from langchain_core.tools import tool
-from langchain_groq import ChatGroq
+from llm_factory import get_llm
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -57,7 +57,7 @@ def rag_search(chat_id: str, query: str, mode: Literal["overview", "semantic"]) 
     return "\n\n---\n\n".join(formatted)
 
 knowledge_tools = [rag_search]
-knowledge_llm = ChatGroq(model=MODEL_NAME, temperature=0).bind_tools(knowledge_tools)
+knowledge_llm = get_llm(model_name=MODEL_NAME, temperature=0).bind_tools(knowledge_tools)
 knowledge_tool_node = ToolNode(knowledge_tools, messages_key="knowledge_messages")
 
 # =========================================================

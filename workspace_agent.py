@@ -4,7 +4,7 @@ import time
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage, RemoveMessage
 from langchain_core.tools import tool
-from langchain_groq import ChatGroq
+from llm_factory import get_llm
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -110,7 +110,7 @@ def write_file(path: str, text: str) -> str:
         return f"Error writing file: {str(e)}"
 
 workspace_tools = [read_file, search_file, create_folder, write_file]
-workspace_llm = ChatGroq(model=MODEL_NAME, temperature=0).bind_tools(workspace_tools)
+workspace_llm = get_llm(model_name=MODEL_NAME, temperature=0).bind_tools(workspace_tools)
 workspace_tool_node = ToolNode(workspace_tools, messages_key="workspace_messages")
 
 # =========================================================

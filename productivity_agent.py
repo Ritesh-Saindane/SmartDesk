@@ -5,7 +5,7 @@ import requests
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage, ToolMessage, RemoveMessage
 from langchain_core.tools import tool
-from langchain_groq import ChatGroq
+from llm_factory import get_llm
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -507,7 +507,7 @@ def reply_to_email(to: str, subject: str, body: str) -> str:
     return send_email.invoke({"to": to, "subject": subject, "body": body})
 
 productivity_tools = [send_email, fetch_unread_emails, reply_to_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive, send_telegram_message, create_doc, read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file, lookup_contact]
-productivity_llm = ChatGroq(model=MODEL_NAME, temperature=0).bind_tools(productivity_tools)
+productivity_llm = get_llm(model_name=MODEL_NAME, temperature=0).bind_tools(productivity_tools)
 productivity_tool_node = ToolNode(productivity_tools, messages_key="productivity_messages")
 
 # =========================================================

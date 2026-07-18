@@ -11,7 +11,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from langchain_core.messages import AIMessage, SystemMessage
-from langchain_groq import ChatGroq
+from llm_factory import get_llm
 from langgraph.graph import END, START, StateGraph
 
 from state import GraphState, Task, ArtifactType
@@ -42,7 +42,7 @@ class OrchestratorDecision(BaseModel):
         None, description="Final message to user when finished."
     )
 
-orchestrator_llm = ChatGroq(model=MODEL_NAME, temperature=0).with_structured_output(
+orchestrator_llm = get_llm(model_name=MODEL_NAME, temperature=0).with_structured_output(
     OrchestratorDecision
 )
 
