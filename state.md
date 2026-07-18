@@ -59,3 +59,12 @@
 - **Deployment**: `v1.0.0` tagged successfully. All tests passing.
 - **Security**: Repository completely scrubbed. `token.json`, `credentials.json`, `.env`, and all dev folders successfully ignored via strict `.gitignore`. Leaked credentials rotated.
 - **Next Milestone**: V2 Branching (RAG testing, Code modularization).
+
+## Current Phase (July 18, 2026)
+- [ ] Set up PostgreSQL integration for LangGraph Checkpointer (`PostgresSaver` working).
+- [ ] Update `productivity_agent` testing to route emails to `ckorion543@gmail.com`.
+- [ ] Implement Daily Briefing Feature ("Fetch all emails, tasks, events").
+- [ ] Implement Email Reply Feature (Read unread emails, reply using SMTP/IMAP).
+- [ ] Implement Human-in-the-loop (HITL) for critical actions.
+- [ ] Comprehensive End-to-End Testing of Productivity Agent.
+- [ ] Future: Keep "Skills" integration in mind.
