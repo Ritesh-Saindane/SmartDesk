@@ -1,4 +1,13 @@
 import os
+
+# Disable all telemetry (ChromaDB, PostHog, Mem0) before any imports happen!
+# This stops background analytics threads from spawning, which are what block
+# the server from shutting down cleanly when you press Ctrl+C.
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY"] = "False"
+os.environ["MEM0_TELEMETRY"] = "False"
+os.environ["POSTHOG_DISABLED"] = "True"
+
 import uuid
 import streamlit as st
 

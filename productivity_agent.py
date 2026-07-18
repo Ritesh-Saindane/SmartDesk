@@ -226,8 +226,11 @@ def list_tasks() -> str:
         return f"Error reading tasks: {str(e)}"
 
 @tool
-def upload_to_drive(file_path: str, mime_type: str | None = None) -> str:
-    """Upload a local file to Google Drive."""
+def upload_to_drive(file_path: str, mime_type: str | None = None, target_mime_type: str | None = None) -> str:
+    """Upload a local file to Google Drive.
+    If you want to convert the file to a Google Doc, pass target_mime_type="application/vnd.google-apps.document".
+    If you want to convert to Google Sheets, pass target_mime_type="application/vnd.google-apps.spreadsheet".
+    """
     print(f"  [Tool] upload_to_drive({file_path})")
     try:
         if not os.path.exists(file_path):
@@ -237,6 +240,8 @@ def upload_to_drive(file_path: str, mime_type: str | None = None) -> str:
             from googleapiclient.http import MediaFileUpload
             file_name = os.path.basename(file_path)
             file_metadata = {"name": file_name}
+            if target_mime_type:
+                file_metadata["mimeType"] = target_mime_type
             media = MediaFileUpload(file_path, mimetype=mime_type)
             result = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
             return f"File '{file_name}' uploaded to Drive (ID: {result.get('id')})"
