@@ -1,0 +1,2 @@
+- Bug: Switching chats causes an infinite pause in Streamlit.
+- Bug: Chat deletion via trash bin button does not work (likely failing silently in try/except).

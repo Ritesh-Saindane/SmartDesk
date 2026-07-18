@@ -63,7 +63,7 @@ with st.sidebar:
     st.subheader("🕒 Previous Chats")
     
     try:
-        from graph import get_all_existing_threads, build_graph
+        from graph import get_all_existing_threads, build_graph, delete_thread
         threads = get_all_existing_threads()
         if not threads:
             st.info("No previous chats found.")
@@ -71,23 +71,33 @@ with st.sidebar:
             for t in threads:
                 # Disable the button if it's the current chat
                 is_current = (t == st.session_state.chat_id)
-                btn_label = f"💬 Chat: {t}" + (" (Current)" if is_current else "")
+                btn_label = f"💬 {t}" + (" (Current)" if is_current else "")
                 
-                if st.button(btn_label, key=f"btn_{t}", use_container_width=True, disabled=is_current):
-                    st.session_state.chat_id = t
-                    graph = build_graph()
-                    checkpoint_state = graph.get_state({"configurable": {"thread_id": t}})
-                    
-                    if checkpoint_state and hasattr(checkpoint_state, 'values') and checkpoint_state.values:
-                        st.session_state.messages = []
-                        for m in checkpoint_state.values.get("messages", []):
-                            role = "user" if m.type == "human" else "assistant"
-                            st.session_state.messages.append({"role": role, "content": m.content})
+                col1, col2 = st.columns([5, 1])
+                with col1:
+                    if st.button(btn_label, key=f"btn_{t}", use_container_width=True, disabled=is_current):
+                        st.session_state.chat_id = t
+                        graph = build_graph()
+                        checkpoint_state = graph.get_state({"configurable": {"thread_id": t}})
                         
-                        st.session_state.uploaded_documents = checkpoint_state.values.get("uploaded_documents", [])
-                        st.session_state.chat_rag_enabled = checkpoint_state.values.get("chat_rag_enabled", False)
-                    
-                    st.rerun()
+                        if checkpoint_state and hasattr(checkpoint_state, 'values') and checkpoint_state.values:
+                            st.session_state.messages = []
+                            for m in checkpoint_state.values.get("messages", []):
+                                role = "user" if m.type == "human" else "assistant"
+                                st.session_state.messages.append({"role": role, "content": m.content})
+                            
+                            st.session_state.uploaded_documents = checkpoint_state.values.get("uploaded_documents", [])
+                            st.session_state.chat_rag_enabled = checkpoint_state.values.get("chat_rag_enabled", False)
+                        
+                        st.rerun()
+                with col2:
+                    if st.button("🗑️", key=f"del_{t}", help="Delete chat history"):
+                        delete_thread(t)
+                        if is_current:
+                            st.session_state.messages = []
+                            st.session_state.uploaded_documents = []
+                            st.session_state.chat_rag_enabled = False
+                        st.rerun()
     except Exception as e:
         st.error(f"Could not load threads: {e}")
 

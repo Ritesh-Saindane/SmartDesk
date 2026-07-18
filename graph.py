@@ -243,6 +243,14 @@ def get_all_existing_threads():
         all_threads.add(checkpoint.config["configurable"]["thread_id"])
     return list(all_threads)
 
+def delete_thread(thread_id: str):
+    """Deletes a chat thread from Postgres."""
+    try:
+        # Some versions might require a specific config format, but this is standard LangGraph API
+        checkpointer.delete_thread({"configurable": {"thread_id": thread_id}})
+    except Exception as e:
+        print(f"Warning: Could not natively delete thread: {e}")
+
 def build_graph():
     builder = StateGraph(GraphState)
 
