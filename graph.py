@@ -102,8 +102,13 @@ def orchestrator(state: GraphState) -> dict:
             else:
                 long_term_mem_str += f"- {str(m)}\n"
 
+    gmail_address = os.getenv("GMAIL_ADDRESS", "unknown")
+
     prompt = f"""You are the Orchestrator of a hierarchical multi-agent AI system.
 You must assign ONE task at a time to the most appropriate agent.
+
+USER PROFILE CONTEXT:
+- Your active/primary email address is: {gmail_address}. If the user refers to "my email", "this email", "self email", or wants to send something to themselves, use exactly this address: {gmail_address}.
 
 Conversation History:
 {chat_history_str}
@@ -136,6 +141,7 @@ Strict Rules:
      task_3 (if needed): Orchestrator uses both artifacts to respond.
 5. Do NOT set finished=True if there are pending actions requested in the user query that have not been performed yet.
 6. When setting finished=True, you MUST write a final_response answering the user's query using the content/payload of the completed task artifacts.
+6a. When chaining tasks (e.g. WorkspaceAgent creates a file and ProductivityAgent emails it), you MUST explicitly pass the generated content/payload from the previous task's artifact directly into the next task's instruction. Do not assume agents share memory.
 7. When you read a file, print its content in final response which you will get in payload.
 8. VERY IMP : AGENT DEMARCATION (CRITICAL):
    - WorkspaceAgent: Use ONLY for local file system operations (read, write, search files/folders) when the user specifies a path or wants to modify local files. Do NOT use this for answering questions about uploaded documents.

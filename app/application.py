@@ -58,7 +58,8 @@ def handle_query(
     user_query: str = None,
     uploaded_documents: list[str] = None,
     chat_rag_enabled: bool = False,
-    resume_action: str = None
+    resume_action: str = None,
+    auto_approve: bool = False
 ) -> Generator[dict, None, None]:
     """
     The main backend entry point.
@@ -152,6 +153,9 @@ def handle_query(
                 
         current_state = graph.get_state(config)
         if current_state.next:
+            if auto_approve:
+                yield {"type": "auto_resume"}
+                return
             msgs = current_state.values.get("productivity_messages", [])
             last_msg = msgs[-1] if msgs else None
             pending_tools = [tc["name"] for tc in last_msg.tool_calls] if (last_msg and hasattr(last_msg, "tool_calls")) else []

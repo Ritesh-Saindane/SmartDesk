@@ -54,6 +54,12 @@ with st.sidebar:
         st.info("No documents uploaded yet.")
         
     st.divider()
+    st.subheader("⚙️ Settings")
+    if "auto_approve" not in st.session_state:
+        st.session_state.auto_approve = False
+    st.session_state.auto_approve = st.toggle("⚡ Auto-Approve Tools (Bypass HITL)", value=st.session_state.auto_approve)
+
+    st.divider()
     st.subheader("🕒 Previous Chats")
     
     try:
@@ -152,11 +158,16 @@ if should_run:
                 user_query=prompt,
                 uploaded_documents=st.session_state.uploaded_documents,
                 chat_rag_enabled=st.session_state.chat_rag_enabled,
-                resume_action=resume_act
+                resume_action=resume_act,
+                auto_approve=st.session_state.get("auto_approve", False)
             ):
                 event_type = event.get("type")
                 
-                if event_type == "interrupted":
+                if event_type == "auto_resume":
+                    st.session_state.resume_action = "approve"
+                    st.rerun()
+                    
+                elif event_type == "interrupted":
                     st.session_state.is_interrupted = True
                     st.session_state.pending_tools = event.get("pending_tools", [])
                     exec_status.update(label="⚠️ Waiting for user approval...", state="error")
