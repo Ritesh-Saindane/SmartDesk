@@ -438,7 +438,75 @@ def lookup_contact(name: str) -> str:
     except Exception as e:
         return f"Error reading contact book: {str(e)}"
 
-productivity_tools = [send_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive, send_telegram_message, create_doc, read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file, lookup_contact]
+@tool
+def fetch_unread_emails(limit: int = 5) -> str:
+    """Fetch unread emails from Gmail inbox via IMAP."""
+    import imaplib
+    import email
+    from email.header import decode_header
+    print(f"  [Tool] fetch_unread_emails(limit={limit})")
+    
+    sender_email = os.getenv("GMAIL_ADDRESS")
+    app_password = os.getenv("GMAIL_APP_PASSWORD")
+    if not (sender_email and app_password):
+        return "Error: GMAIL_ADDRESS and GMAIL_APP_PASSWORD not set in .env"
+        
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(sender_email, app_password)
+        mail.select("inbox")
+        status, messages = mail.search(None, "UNSEEN")
+        if status != "OK":
+            return "Failed to search for unread emails."
+            
+        email_ids = messages[0].split()
+        if not email_ids:
+            return "No unread emails."
+            
+        emails_fetched = []
+        for e_id in reversed(email_ids[-limit:]):
+            res, msg_data = mail.fetch(e_id, "(RFC822)")
+            for response_part in msg_data:
+                if isinstance(response_part, tuple):
+                    msg = email.message_from_bytes(response_part[1])
+                    subject, encoding = decode_header(msg["Subject"])[0]
+                    if isinstance(subject, bytes):
+                        subject = subject.decode(encoding if encoding else "utf-8")
+                    
+                    from_ = msg.get("From")
+                    date_ = msg.get("Date")
+                    
+                    body = ""
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == "text/plain":
+                                try:
+                                    body = part.get_payload(decode=True).decode()
+                                    break
+                                except:
+                                    pass
+                    else:
+                        try:
+                            body = msg.get_payload(decode=True).decode()
+                        except:
+                            pass
+                            
+                    snippet = body[:250].replace("\n", " ") + "..."
+                    emails_fetched.append(f"From: {from_} | Date: {date_} | Subject: {subject} | Body: {snippet}")
+        mail.logout()
+        return "\n\n".join(emails_fetched)
+    except Exception as e:
+        return f"Error fetching emails: {str(e)}"
+
+@tool
+def reply_to_email(to: str, subject: str, body: str) -> str:
+    """Send a reply to an email."""
+    print(f"  [Tool] reply_to_email(to={to})")
+    if not subject.lower().startswith("re:"):
+        subject = f"Re: {subject}"
+    return send_email.invoke({"to": to, "subject": subject, "body": body})
+
+productivity_tools = [send_email, fetch_unread_emails, reply_to_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive, send_telegram_message, create_doc, read_doc, append_to_doc, reschedule_event, delete_event, share_drive_file, lookup_contact]
 productivity_llm = ChatGroq(model=MODEL_NAME, temperature=0).bind_tools(productivity_tools)
 productivity_tool_node = ToolNode(productivity_tools, messages_key="productivity_messages")
 
@@ -456,11 +524,13 @@ def productivity_agent(state: GraphState) -> dict:
         if aid in state["artifacts"]
     }
 
-    sys_prompt = f"""You are ProductivityAgent. You handle emails, calendars, scheduling, Google Tasks, Telegram messages, Google Docs, looking up contacts, and Google Drive file operations.
+    sys_prompt = f"""You are ProductivityAgent. You handle emails (fetching, reading, sending, replying), calendars, scheduling, Google Tasks, Telegram messages, Google Docs, looking up contacts, and Google Drive file operations.
 Task: {task.instruction}
 Expected Output: {task.expected_output}
 Context: {json.dumps(context)}
 
+When asked to fetch emails, retrieve unread emails and present them clearly. 
+When asked to reply, use the `reply_to_email` tool.
 Use the available tools to complete the task. You may call multiple tools if needed."""
 
     if state["agent_steps"] == 0:
@@ -536,4 +606,4 @@ def build_productivity_subgraph():
     builder.add_edge("ProductivityToolNode", "ProductivityAgent")
     builder.add_edge("ProductivityFinalizer", END)
     
-    return builder.compile()
+    return builder.compile(interrupt_before=["ProductivityToolNode"])

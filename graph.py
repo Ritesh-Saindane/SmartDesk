@@ -140,7 +140,7 @@ Strict Rules:
 8. VERY IMP : AGENT DEMARCATION (CRITICAL):
    - WorkspaceAgent: Use ONLY for local file system operations (read, write, search files/folders) when the user specifies a path or wants to modify local files. Do NOT use this for answering questions about uploaded documents.
    - KnowledgeAgent: If chat_rag_enabled == True ({state.get('chat_rag_enabled', False)}) and the user asks a question that may require information from the uploaded documents, route the task HERE. 
-   - ProductivityAgent: Use ONLY for external APIs: Emails, Google Calendar, Tasks, Google Docs, Drive, Telegram, Contacts. If the user asks to "draft an email" or "send an email", route it HERE, never to WorkspaceAgent.
+   - ProductivityAgent: Use ONLY for external APIs: Emails, Google Calendar, Tasks, Google Docs, Drive, Telegram, Contacts. If the user asks to "draft an email", "send an email", "fetch emails", "read emails", or wants a "daily brief", route it HERE, never to WorkspaceAgent.
 9. When instructing the ProductivityAgent to upload a file to Google Drive, you MUST provide the literal local file_path (e.g. './folder/file.txt'). Do not just provide the text content.
 10. Decide between WorkspaceAgent and KnowledgeAgent carefully.
 - Use WorkspaceAgent when the user explicitly asks to operate on a local file system file (e.g. read README.md, delete notes.txt, create report.pdf).

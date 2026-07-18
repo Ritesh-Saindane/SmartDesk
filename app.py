@@ -99,10 +99,39 @@ for msg in st.session_state.messages:
 
 
 # ── Handle new user input ─────────────────────────────────────────────────────
-if prompt := st.chat_input("How can I help you today?"):
+# ── Handle new user input ─────────────────────────────────────────────────────
+
+if st.session_state.get("is_interrupted"):
+    with st.chat_message("assistant"):
+        st.warning("⚠️ **Approval Required for Tools**")
+        st.write(f"`{', '.join(st.session_state.get('pending_tools', []))}`")
+        c1, c2, _ = st.columns([1, 1, 2])
+        if c1.button("✅ Approve"):
+            st.session_state.resume_action = "approve"
+            st.session_state.is_interrupted = False
+            st.rerun()
+        if c2.button("❌ Reject"):
+            st.session_state.resume_action = "reject"
+            st.session_state.is_interrupted = False
+            st.rerun()
+
+prompt = st.chat_input("How can I help you today?")
+should_run = False
+
+if prompt and not st.session_state.get("is_interrupted"):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    should_run = True
+
+if st.session_state.get("resume_action"):
+    should_run = True
+
+if should_run:
+    if prompt:
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+    resume_act = st.session_state.get("resume_action")
+    st.session_state.resume_action = None
 
     with st.chat_message("assistant"):
         # ── Live execution status container ───────────────────────────────────
@@ -122,11 +151,18 @@ if prompt := st.chat_input("How can I help you today?"):
                 chat_id=st.session_state.chat_id,
                 user_query=prompt,
                 uploaded_documents=st.session_state.uploaded_documents,
-                chat_rag_enabled=st.session_state.chat_rag_enabled
+                chat_rag_enabled=st.session_state.chat_rag_enabled,
+                resume_action=resume_act
             ):
                 event_type = event.get("type")
                 
-                if event_type == "task_start":
+                if event_type == "interrupted":
+                    st.session_state.is_interrupted = True
+                    st.session_state.pending_tools = event.get("pending_tools", [])
+                    exec_status.update(label="⚠️ Waiting for user approval...", state="error")
+                    st.rerun()
+
+                elif event_type == "task_start":
                     emoji = AGENT_EMOJI.get(event["agent"], "🤖")
                     st.write(f"🎯 **Orchestrator** → {emoji} **{event['agent']}**")
                     st.caption(f"*{event['instruction']}*")

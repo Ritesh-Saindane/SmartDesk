@@ -55,9 +55,10 @@ def handle_query(
     *,
     user_id: str,
     chat_id: str,
-    user_query: str,
-    uploaded_documents: list[str],
-    chat_rag_enabled: bool = False
+    user_query: str = None,
+    uploaded_documents: list[str] = None,
+    chat_rag_enabled: bool = False,
+    resume_action: str = None
 ) -> Generator[dict, None, None]:
     """
     The main backend entry point.
@@ -67,19 +68,36 @@ def handle_query(
     Yields event dictionaries for the frontend to render, ending with a 'final' event containing ChatResult.
     """
     
-    try:
-        memories = retrieve_memories(user_id=user_id, query=user_query, limit=5)
-    except Exception as e:
-        memories = []
-        yield {"type": "error", "message": f"Memory retrieval failed: {e}"}
-        
-    initial_state = create_initial_state(
-        chat_id=chat_id,
-        chat_rag_enabled=chat_rag_enabled,
-        uploaded_documents=uploaded_documents,
-        user_query=user_query,
-        memories=memories
-    )
+    config = {
+        "recursion_limit": 35,
+        "configurable": {"thread_id": chat_id}
+    }
+    
+    if resume_action:
+        if resume_action == "reject":
+            state = graph.get_state(config)
+            msgs = state.values.get("productivity_messages", [])
+            last_msg = msgs[-1] if msgs else None
+            if last_msg and hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+                from langchain_core.messages import ToolMessage
+                reject_msgs = [ToolMessage(content="User REJECTED this action.", tool_call_id=tc["id"], name=tc["name"]) for tc in last_msg.tool_calls]
+                graph.update_state(config, {"productivity_messages": reject_msgs}, as_node="ProductivityToolNode")
+        stream_generator = graph.stream(None, config=config, stream_mode="values")
+    else:
+        try:
+            memories = retrieve_memories(user_id=user_id, query=user_query, limit=5)
+        except Exception as e:
+            memories = []
+            yield {"type": "error", "message": f"Memory retrieval failed: {e}"}
+            
+        initial_state = create_initial_state(
+            chat_id=chat_id,
+            chat_rag_enabled=chat_rag_enabled,
+            uploaded_documents=uploaded_documents or [],
+            user_query=user_query,
+            memories=memories
+        )
+        stream_generator = graph.stream(initial_state, config=config, stream_mode="values")
     
     # State tracking variables for diffing stream chunks
     MSG_KEYS = [
@@ -95,14 +113,7 @@ def handle_query(
     final_state = None
     
     try:
-        for state in graph.stream(
-            initial_state,
-            config={
-                "recursion_limit": 35,
-                "configurable": {"thread_id": chat_id}
-            },
-            stream_mode="values",
-        ):
+        for state in stream_generator:
             final_state = state
             
             # Orchestrator: new task assigned
@@ -139,7 +150,17 @@ def handle_query(
             if new_arts:
                 prev_artifact_ids = set(arts.keys())
                 
+        current_state = graph.get_state(config)
+        if current_state.next:
+            msgs = current_state.values.get("productivity_messages", [])
+            last_msg = msgs[-1] if msgs else None
+            pending_tools = [tc["name"] for tc in last_msg.tool_calls] if (last_msg and hasattr(last_msg, "tool_calls")) else []
+            yield {"type": "interrupted", "pending_tools": pending_tools}
+            return
+                
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         yield {"type": "error", "message": f"Error during execution: {str(e)}"}
         return
         
