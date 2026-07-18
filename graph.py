@@ -19,6 +19,7 @@ from workspace_agent import build_workspace_subgraph
 from knowledge_agent import build_knowledge_subgraph
 from productivity_agent import build_productivity_subgraph
 
+os.environ["LANGGRAPH_ALLOWED_MSGPACK_MODULES"] = "state"
 load_dotenv()
 MODEL_NAME = "openai/gpt-oss-120b"
 

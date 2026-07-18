@@ -16,3 +16,5 @@ chroma_db/
 TestOutput/
 vectorstores/
 memory/
+chat_uploads/
+chat_chroma/

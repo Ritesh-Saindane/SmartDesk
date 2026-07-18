@@ -7,7 +7,7 @@ os.environ["HEADLESS_TEST"] = "1"
 
 load_dotenv()
 
-from main import build_graph, refresh_knowledge_base
+from graph import build_graph, refresh_knowledge_base
 
 def run_test(test_name, query):
     print(f"\n=========================================================")
