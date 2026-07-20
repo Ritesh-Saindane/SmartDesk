@@ -74,7 +74,8 @@ def get_google_credentials():
         "https://www.googleapis.com/auth/tasks",
         "https://www.googleapis.com/auth/drive.file",
         "https://www.googleapis.com/auth/documents",
-        "https://www.googleapis.com/auth/spreadsheets"
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/gmail.readonly"
     ]
     creds = None
     if os.path.exists("token.json"):
@@ -83,9 +84,11 @@ def get_google_credentials():
                 token_data = json.load(f)
             token_scopes = token_data.get("scopes", [])
             if not all(s in token_scopes for s in SCOPES):
-                print("  [Auth] Scopes updated. Requires re-authentication. Falling back to mock for now.")
-                return None
-            creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+                print("  [Auth] Scopes updated. Forcing re-authentication.")
+                os.remove("token.json")
+                creds = None
+            else:
+                creds = Credentials.from_authorized_user_file("token.json", SCOPES)
         except Exception:
             pass
 
@@ -494,61 +497,48 @@ def append_to_sheet(spreadsheet_id: str, range_name: str, values: list) -> str:
         return f"Error appending to sheet: {str(e)}"
 
 @tool
-def fetch_unread_emails(limit: int = 5) -> str:
-    """Fetch unread emails from Gmail inbox via IMAP."""
-    import imaplib
-    import email
-    from email.header import decode_header
-    print(f"  [Tool] fetch_unread_emails(limit={limit})")
-    
-    sender_email = os.getenv("GMAIL_ADDRESS")
-    app_password = os.getenv("GMAIL_APP_PASSWORD")
-    if not (sender_email and app_password):
-        return "Error: GMAIL_ADDRESS and GMAIL_APP_PASSWORD not set in .env"
-        
+def fetch_emails(limit: int = 5, unread_only: bool = True) -> str:
+    """Fetch emails from Gmail inbox using the Gmail API. Can filter by unread only."""
+    print(f"  [Tool] fetch_emails(limit={limit}, unread_only={unread_only})")
     try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com")
-        mail.login(sender_email, app_password)
-        mail.select("inbox")
-        status, messages = mail.search(None, "UNSEEN")
-        if status != "OK":
-            return "Failed to search for unread emails."
+        service = get_google_service("gmail", "v1")
+        if not service:
+            return "Error: Missing Google credentials."
+        
+        label_ids = ['INBOX']
+        if unread_only:
+            label_ids.append('UNREAD')
             
-        email_ids = messages[0].split()
-        if not email_ids:
-            return "No unread emails."
+        results = service.users().messages().list(userId='me', labelIds=label_ids, maxResults=limit).execute()
+        messages = results.get('messages', [])
+        if not messages:
+            return "No emails found matching criteria."
             
         emails_fetched = []
-        for e_id in reversed(email_ids[-limit:]):
-            res, msg_data = mail.fetch(e_id, "(RFC822)")
-            for response_part in msg_data:
-                if isinstance(response_part, tuple):
-                    msg = email.message_from_bytes(response_part[1])
-                    subject, encoding = decode_header(msg["Subject"])[0]
-                    if isinstance(subject, bytes):
-                        subject = subject.decode(encoding if encoding else "utf-8")
-                    
-                    from_ = msg.get("From")
-                    date_ = msg.get("Date")
-                    
-                    body = ""
-                    if msg.is_multipart():
-                        for part in msg.walk():
-                            if part.get_content_type() == "text/plain":
-                                try:
-                                    body = part.get_payload(decode=True).decode()
-                                    break
-                                except:
-                                    pass
-                    else:
-                        try:
-                            body = msg.get_payload(decode=True).decode()
-                        except:
-                            pass
-                            
-                    snippet = body[:250].replace("\n", " ") + "..."
-                    emails_fetched.append(f"From: {from_} | Date: {date_} | Subject: {subject} | Body: {snippet}")
-        mail.logout()
+        for msg in messages:
+            msg_data = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
+            payload = msg_data.get('payload', {})
+            headers = payload.get('headers', [])
+            
+            subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+            from_ = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender')
+            date_ = next((h['value'] for h in headers if h['name'] == 'Date'), 'Unknown Date')
+            
+            body = ""
+            parts = payload.get('parts', [])
+            if not parts and payload.get('body', {}).get('data'):
+                import base64
+                body = base64.urlsafe_b64decode(payload['body']['data']).decode('utf-8')
+            else:
+                for part in parts:
+                    if part.get('mimeType') == 'text/plain' and part.get('body', {}).get('data'):
+                        import base64
+                        body = base64.urlsafe_b64decode(part['body']['data']).decode('utf-8')
+                        break
+            
+            snippet = body[:250].replace('\n', ' ') + "..."
+            emails_fetched.append(f"From: {from_} | Date: {date_} | Subject: {subject} | Body: {snippet}")
+            
         return "\n\n".join(emails_fetched)
     except Exception as e:
         return f"Error fetching emails: {str(e)}"
@@ -561,7 +551,7 @@ def reply_to_email(to: str, subject: str, body: str) -> str:
         subject = f"Re: {subject}"
     return send_email.invoke({"to": to, "subject": subject, "body": body})
 
-productivity_tools = [send_email, fetch_unread_emails, reply_to_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive, send_telegram_message, create_doc, read_doc, append_to_doc, create_sheet, read_sheet, append_to_sheet, reschedule_event, delete_event, share_drive_file, lookup_contact]
+productivity_tools = [send_email, fetch_emails, reply_to_email, calendar_today, create_event, create_task, list_tasks, upload_to_drive, search_drive, send_telegram_message, create_doc, read_doc, append_to_doc, create_sheet, read_sheet, append_to_sheet, reschedule_event, delete_event, share_drive_file, lookup_contact]
 productivity_llm = get_llm(model_name=MODEL_NAME, temperature=0).bind_tools(productivity_tools)
 productivity_tool_node = ToolNode(productivity_tools, messages_key="productivity_messages")
 
@@ -584,7 +574,7 @@ Task: {task.instruction}
 Expected Output: {task.expected_output}
 Context: {json.dumps(context)}
 
-When asked to fetch emails, retrieve unread emails and present them clearly. 
+When asked to fetch emails, retrieve them based on the query (use unread_only=False if they ask for all emails) and present them clearly. 
 When asked to reply, use the `reply_to_email` tool.
 Use the available tools to complete the task. You may call multiple tools if needed."""
 
