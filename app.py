@@ -69,6 +69,14 @@ with st.sidebar:
     st.session_state.auto_approve = st.toggle("⚡ Auto-Approve Tools (Bypass HITL)", value=st.session_state.auto_approve)
 
     st.divider()
+    
+    if st.button("➕ Start New Chat", use_container_width=True, type="primary"):
+        st.session_state.chat_id = uuid.uuid4().hex[:6]
+        st.session_state.messages = []
+        st.session_state.uploaded_documents = []
+        st.session_state.chat_rag_enabled = False
+        st.rerun()
+
     st.subheader("🕒 Previous Chats")
     
     try:
