@@ -172,10 +172,12 @@ def handle_query(
         response_text = final_state.get("final_response", "Task completed without a final response.")
         
         # Background Memory Storage
-        mem_messages = [
-            {"role": "user", "content": user_query},
-            {"role": "assistant", "content": response_text}
-        ]
+        # Convert full chat history to dicts for the new memory extractor
+        mem_messages = []
+        for m in final_state.get("messages", []):
+            role = "user" if m.type == "human" else "assistant"
+            mem_messages.append({"role": role, "content": m.content})
+            
         threading.Thread(
             target=store_memories, 
             args=(mem_messages, user_id),
