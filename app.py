@@ -15,6 +15,36 @@ from app.application import handle_query, upload_document, ChatResult
 
 st.set_page_config(page_title="SmartDesk AI", page_icon="🤖", layout="wide")
 
+st.markdown("""
+<style>
+/* Modern typography and polished UI elements */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+}
+
+/* Polished buttons with hover effects */
+.stButton>button {
+    border-radius: 8px;
+    transition: all 0.2s ease-in-out;
+    border: 1px solid rgba(150, 150, 150, 0.2);
+}
+.stButton>button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-color: rgba(150, 150, 150, 0.4);
+}
+
+/* Refined dividers */
+hr {
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+    opacity: 0.5;
+}
+</style>
+""", unsafe_allow_html=True)
+
 if "chat_id" not in st.session_state:
     st.session_state.chat_id = uuid.uuid4().hex[:6]
 if "chat_rag_enabled" not in st.session_state:
