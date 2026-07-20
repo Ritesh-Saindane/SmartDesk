@@ -13,6 +13,6 @@ def get_embedding_model() -> HuggingFaceEndpointEmbeddings:
         _embedding_model = HuggingFaceEndpointEmbeddings(
             model="sentence-transformers/all-MiniLM-L6-v2",
             task="feature-extraction",
-            huggingfacehub_api_token=os.getenv("HUGGINGFACE_API_KEY", "hf_dummy_key")
+            huggingfacehub_api_token=os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
         )
     return _embedding_model
