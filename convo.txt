@@ -1,0 +1,6 @@
+Sender,Subject,Timestamp
+Google <noreply-accounts@google.com>,You shared some Google Account data with Claude,Mon, 20 Jul 2026 09:02:06 -0700
+Chaitanya Shinde <chaitanyashinde545@gmail.com>,Re: hey there <3>,Mon, 20 Jul 2026 19:56:24 +0530
+Chaitanya Shinde <chaitanyashinde545@gmail.com>,but why u dont reply,Mon, 20 Jul 2026 18:48:18 +0530
+Chaitanya Shinde <chaitanyashinde545@gmail.com>,Take care,Mon, 20 Jul 2026 17:47:01 +0530
+Chaitanya Shinde <chaitanyashinde545@gmail.com>,Hello,Mon, 20 Jul 2026 17:33:22 +0530
