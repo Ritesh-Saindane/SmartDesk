@@ -498,7 +498,10 @@ def append_to_sheet(spreadsheet_id: str, range_name: str, values: list) -> str:
 
 @tool
 def fetch_emails(limit: int = 5, unread_only: bool = True) -> str:
-    """Fetch emails from Gmail inbox using the Gmail API. Can filter by unread only."""
+    """Fetch emails from Gmail inbox using the Gmail API. Can filter by unread only.
+    Default limit is 5. Max limit is 10, to be used ONLY if the user explicitly asks to fetch all emails within the past month.
+    """
+    limit = min(limit, 10)
     print(f"  [Tool] fetch_emails(limit={limit}, unread_only={unread_only})")
     try:
         service = get_google_service("gmail", "v1")
