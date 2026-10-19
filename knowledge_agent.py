@@ -56,7 +56,33 @@ def rag_search(chat_id: str, query: str, mode: Literal["overview", "semantic"]) 
     print("rag searched documents : -----> ",formatted)
     return "\n\n---\n\n".join(formatted)
 
-knowledge_tools = [rag_search]
+@tool
+def web_search(query: str, num_results: int = 5) -> str:
+    """Perform a web search using DuckDuckGo to answer general knowledge or current events questions. Keep the query short and simple (2-4 keywords)."""
+    print(f"  [Tool] web_search(query={query})")
+    
+    import sys, io
+    original_stderr = sys.stderr
+    sys.stderr = io.StringIO()  # Suppress the noisy DDGS warning
+    try:
+        from duckduckgo_search import DDGS
+        ddgs = DDGS()
+        results = list(ddgs.text(query, max_results=num_results))
+    except Exception as e:
+        sys.stderr = original_stderr
+        return f"Error performing web search: {str(e)}"
+    finally:
+        sys.stderr = original_stderr
+        
+    if not results:
+        return "No web search results found. YOUR QUERY WAS LIKELY TOO LONG OR COMPLEX. Please try again with a much simpler, shorter query (e.g., 2-4 keywords)."
+        
+    formatted = []
+    for i, res in enumerate(results, 1):
+        formatted.append(f"[{i}] {res.get('title', '')}\nURL: {res.get('href', '')}\nSummary: {res.get('body', '')}")
+    return "\n\n".join(formatted)
+
+knowledge_tools = [rag_search, web_search]
 knowledge_llm = get_llm(model_name=MODEL_NAME, temperature=0).bind_tools(knowledge_tools)
 knowledge_tool_node = ToolNode(knowledge_tools, messages_key="knowledge_messages")
 
@@ -100,6 +126,9 @@ def knowledge_agent(state: GraphState) -> dict:
 
     has_tool_message = any(isinstance(m, ToolMessage) for m in state["knowledge_messages"])
     
+    import datetime
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     sys_prompt = f"""You are KnowledgeAgent. You handle summarization, research, writing tasks, and document Q&A.
 
 Task: {task.instruction}
@@ -107,9 +136,10 @@ Expected Output: {task.expected_output}
 Context (artifact payloads from prior tasks): {json.dumps(context)}
 Current Chat ID: {state.get("chat_id", "unknown")}
 Uploaded Documents: {json.dumps(state.get("uploaded_documents", []))}
+CURRENT DATE & TIME: {current_time}
 
-You have access to the user's personal knowledge base via the `rag_search` tool.
-The documents you search are ONLY the documents uploaded in the CURRENT CHAT.
+You have access to the user's personal knowledge base via the `rag_search` tool, AND the open internet via `web_search`.
+The documents you search with `rag_search` are ONLY the documents uploaded in the CURRENT CHAT.
 When calling `rag_search`, you MUST pass the Current Chat ID as the `chat_id` parameter.
 
 IMPORTANT — HANDLING CONTEXT ARTIFACTS:
@@ -139,15 +169,16 @@ You must classify the user's request into one of two intents before calling `rag
    - When calling with mode="semantic", you MUST pass the complete natural-language user question as the `query`. Do NOT reduce it to generic words like "document" or "pdf".
 
 STRICT TOOL EXECUTION RULES:
-- If no ToolMessage exists yet, decide whether retrieval is needed.
+- If no ToolMessage exists yet, decide whether retrieval or web search is needed.
 - If a ToolMessage already exists (meaning you have already received search results):
-   - NEVER call `rag_search` again. Each task should invoke `rag_search` at most once.
-   - Generate the final answer from the retrieved chunks.
+   - NEVER call `rag_search` or `web_search` again. Each task should invoke a tool at most once.
+   - Generate the final answer from the retrieved chunks/web results.
    - If the retrieved context is insufficient, explicitly state that instead of searching again.
 - Answer ONLY using the retrieved context. Do not invent facts.
 
-If the question is clearly general knowledge (e.g., 'What is machine learning?'),
-answer it directly without calling any tool.
+If the task explicitly asks you to "perform a web search", you MUST call `web_search`.
+If the question is clearly general knowledge or requires up-to-date facts (e.g., 'What is machine learning?', 'Who won the election?'),
+call `web_search` instead of `rag_search`.
 """
 
     if state["agent_steps"] == 0:
@@ -156,9 +187,15 @@ answer it directly without calling any tool.
         messages = [SystemMessage(content=sys_prompt)] + state["knowledge_messages"]
 
     time.sleep(2)
-    response = knowledge_llm.invoke(messages)
+    
+    # Physically prevent loops: If we already searched, unbind the tools so the LLM MUST summarize.
+    if has_tool_message:
+        raw_llm = get_llm(model_name=MODEL_NAME, temperature=0)
+        response = raw_llm.invoke(messages)
+    else:
+        response = knowledge_llm.invoke(messages)
 
-    if response.tool_calls:
+    if hasattr(response, "tool_calls") and response.tool_calls:
         print(f"  [KnowledgeAgent] Tool calls: {[tc['name'] for tc in response.tool_calls]}")
     else:
         print("  [KnowledgeAgent] Done — no more tool calls.")

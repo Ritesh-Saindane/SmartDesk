@@ -18,6 +18,9 @@ from state import GraphState, Task, ArtifactType
 from workspace_agent import build_workspace_subgraph
 from knowledge_agent import build_knowledge_subgraph
 from productivity_agent import build_productivity_subgraph
+from skill_agent import build_skill_subgraph
+from skill_generator import build_skill_generator_subgraph
+from skills_registry import registry
 
 os.environ["LANGGRAPH_ALLOWED_MSGPACK_MODULES"] = "state"
 load_dotenv()
@@ -28,7 +31,7 @@ MODEL_NAME = "openai/gpt-oss-120b"
 # =========================================================
 
 class OrchestratorTask(BaseModel):
-    agent: Literal["WorkspaceAgent", "KnowledgeAgent", "ProductivityAgent"]
+    agent: Literal["WorkspaceAgent", "KnowledgeAgent", "ProductivityAgent", "SkillAgent", "SkillGeneratorAgent"]
     instruction: str
     context_artifacts: List[str] = Field(default_factory=list)
     expected_output: str
@@ -42,7 +45,7 @@ class OrchestratorDecision(BaseModel):
         None, description="Final message to user when finished."
     )
 
-orchestrator_llm = get_llm(model_name=MODEL_NAME, temperature=0).with_structured_output(
+orchestrator_llm = get_llm(model_name=MODEL_NAME, temperature=0, max_tokens=800).with_structured_output(
     OrchestratorDecision
 )
 
@@ -59,7 +62,7 @@ def orchestrator(state: GraphState) -> dict:
 
     completed = [
         {"id": t.id, "agent": t.agent, "status": t.status, "instruction": t.instruction}
-        for t in state.get("completed_tasks", [])
+        for t in state.get("completed_tasks", [])[-5:] # Truncate to last 5
     ]
 
     # ── Build artifact summaries for the Orchestrator prompt ───────────────────
@@ -89,7 +92,7 @@ def orchestrator(state: GraphState) -> dict:
         artifact_summaries.append(summary)
 
     chat_history_str = ""
-    for m in state.get("messages", []):
+    for m in state.get("messages", [])[-6:]: # Truncate to last 6 messages
         role = "User" if m.type == "human" else "Assistant"
         chat_history_str += f"{role}: {m.content}\n"
 
@@ -103,9 +106,17 @@ def orchestrator(state: GraphState) -> dict:
                 long_term_mem_str += f"- {str(m)}\n"
 
     gmail_address = os.getenv("GMAIL_ADDRESS", "unknown")
+    
+    registry.refresh()
+    skill_summaries = registry.get_skill_summaries()
+
+    import datetime
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     prompt = f"""You are the Orchestrator of a hierarchical multi-agent AI system.
 You must assign ONE task at a time to the most appropriate agent.
+
+CURRENT DATE & TIME: {current_time}
 
 USER PROFILE CONTEXT:
 - Your active/primary email address is: {gmail_address}. If the user refers to "my email", "this email", "self email", or wants to send something to themselves, use exactly this address: {gmail_address}.
@@ -124,9 +135,13 @@ Completed Tasks (with instructions):
 Available Artifacts:
 {json.dumps(artifact_summaries, indent=2)}
 
+Available Dynamic Skills (Route to SkillAgent if using one of these):
+{skill_summaries}
 
 Strict Rules:
-1. Assign exactly ONE next task to WorkspaceAgent, KnowledgeAgent, or ProductivityAgent.
+1. Assign exactly ONE next task to WorkspaceAgent, KnowledgeAgent, ProductivityAgent, SkillAgent, or SkillGeneratorAgent.
+1b. THE 'SHOW, DON'T TELL' RULE FOR SKILLS (CRITICAL): If the user suggests, requests, or asks about creating, setting up, or making a new skill/tool (e.g., "what do you think about setting a research skill"), DO NOT just give them a conversational answer. You MUST immediately route the task to `SkillGeneratorAgent` with detailed instructions on what python script it should write to actually build the skill they are talking about.
+1c. If a SkillGeneratorAgent task completes but its artifact says it FAILED, DO NOT assign another SkillGeneratorAgent task. Set finished=True immediately and tell the user it failed.
 2. Look at the completed task instructions carefully. If all tasks required to fulfill the user query are completed, set finished=True NOW.
 3. Do NOT repeat a task type that is already completed.
 4. Only assign tasks that are directly necessary to answer the user query.
@@ -145,7 +160,7 @@ Strict Rules:
 7. When you read a file, print its content in final response which you will get in payload.
 8. VERY IMP : AGENT DEMARCATION (CRITICAL):
    - WorkspaceAgent: Use ONLY for local file system operations (read, write, search files/folders) when the user specifies a path or wants to modify local files. Do NOT use this for answering questions about uploaded documents.
-   - KnowledgeAgent: If chat_rag_enabled == True ({state.get('chat_rag_enabled', False)}) and the user asks a question that may require information from the uploaded documents, route the task HERE. 
+   - KnowledgeAgent: If chat_rag_enabled == True and the user asks a question about uploaded documents, OR if the user asks a question requiring an INTERNET SEARCH / WEB SEARCH, route the task HERE. 
    - ProductivityAgent: Use ONLY for external APIs: Emails, Google Calendar, Tasks, Google Docs, Drive, Telegram, Contacts. If the user asks to "draft an email", "send an email", "fetch emails", "read emails", or wants a "daily brief", route it HERE, never to WorkspaceAgent.
 9. When instructing the ProductivityAgent to upload a file to Google Drive, you MUST provide the literal local file_path (e.g. './folder/file.txt'). Do not just provide the text content.
 10. Decide between WorkspaceAgent and KnowledgeAgent carefully.
@@ -153,13 +168,14 @@ Strict Rules:
 - Use KnowledgeAgent when the user asks questions about the contents of their current chat uploads. The KnowledgeAgent has access to semantic search (RAG) over the documents uploaded in this chat.
 
 Examples:
-- "What do my notes say about LangGraph?"
-- "Explain normalization from my DBMS notes."
-- "Have I written anything about vector databases?"
-- "Summarize my AI research papers."
-- "What does my resume mention about machine learning?"
+- "What do my notes say about LangGraph?" (KnowledgeAgent)
+- "Search the web for latest AI news." (KnowledgeAgent)
+- "Explain normalization from my DBMS notes." (KnowledgeAgent)
+- "Have I written anything about vector databases?" (KnowledgeAgent)
+- "Summarize my AI research papers." (KnowledgeAgent)
+- "What does my resume mention about machine learning?" (KnowledgeAgent)
 
-When in doubt, prefer the KnowledgeAgent for semantic document questions rather than WorkspaceAgent.
+When in doubt, prefer the KnowledgeAgent for semantic document questions and web searches rather than WorkspaceAgent.
 
 11. LARGE DOCUMENT HANDLING:
 If a raw_context artifact has metadata.payload_inlined=False, the file content was too
@@ -184,11 +200,26 @@ Rule 12a — Never re-read a file already captured as a raw_context artifact.
 
 Rule 12b — If more than 2 tasks completed without resolving the user query,
   set finished=True with the best available explanation rather than looping.
+
+CRITICAL INSTRUCTION: You are communicating with an API that REQUIRES structured output. You MUST format your entire response as the OrchestratorDecision tool call. Do NOT output any conversational text or markdown before or after the tool call!
 """
 
-    decision: OrchestratorDecision = orchestrator_llm.invoke(
-        [SystemMessage(content=prompt)]
-    )
+    try:
+        decision: OrchestratorDecision = orchestrator_llm.invoke(
+            [SystemMessage(content=prompt)]
+        )
+    except Exception as e:
+        if "Tool choice is required" in str(e) or "tool_use_failed" in str(e):
+            print("  [Orchestrator] Caught Llama 3 Tool Choice Error. Forcing completion.")
+            decision = OrchestratorDecision(
+                next_agent=None,
+                task_instruction="",
+                expected_output="",
+                finished=True,
+                final_response="The task was completed, but I encountered an API formatting error while summarizing. Please check the artifacts for the raw results."
+            )
+        else:
+            raise e
 
     if decision.finished or decision.task is None:
         final_msg = decision.final_response or "All tasks completed successfully."
@@ -260,6 +291,8 @@ def build_graph():
     builder.add_node("WorkspaceAgent", build_workspace_subgraph())
     builder.add_node("KnowledgeAgent", build_knowledge_subgraph())
     builder.add_node("ProductivityAgent", build_productivity_subgraph())
+    builder.add_node("SkillAgent", build_skill_subgraph())
+    builder.add_node("SkillGeneratorAgent", build_skill_generator_subgraph())
 
     # ── Entry ─────────────────────────────────────────────
     builder.add_edge(START, "Orchestrator")
@@ -271,6 +304,8 @@ def build_graph():
     builder.add_edge("WorkspaceAgent", "Orchestrator")
     builder.add_edge("KnowledgeAgent", "Orchestrator")
     builder.add_edge("ProductivityAgent", "Orchestrator")
+    builder.add_edge("SkillAgent", "Orchestrator")
+    builder.add_edge("SkillGeneratorAgent", "Orchestrator")
 
     return builder.compile(checkpointer=checkpointer)
 
@@ -290,6 +325,8 @@ if __name__ == "__main__":
         "workspace_messages": [],
         "knowledge_messages": [],
         "productivity_messages": [],
+        "skill_messages": [],
+        "generator_data": {},
         "current_task": None,
         "completed_tasks": [],
         "artifacts": {},

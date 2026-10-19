@@ -60,6 +60,11 @@
 - **Security**: Repository completely scrubbed. `token.json`, `credentials.json`, `.env`, and all dev folders successfully ignored via strict `.gitignore`. Leaked credentials rotated.
 - **Next Milestone**: V2 Branching (RAG testing, Code modularization).
 
+## Session Summary (Late July 2026)
+- **Git Organization**: Added user's fork as remote (`myfork`). Deferred CI/CD and Docker exclusively to this fork.
+- **UI Enhancement**: Overhauled the Streamlit UI in `app.py`. Added premium dark-mode, glassmorphism, dynamic gradients, and custom modern typography (Outfit & JetBrains Mono).
+- **Architecture Planning**: Conducted deep research on the Hermes Agentic Framework. Designed a custom LangGraph-compatible Skills Architecture featuring a Validation Sandbox, Progressive Disclosure, and strict Human-In-The-Loop (HITL) checkpoints.
+
 ## Current Phase (July 18, 2026)
 - [x] Set up PostgreSQL integration for LangGraph Checkpointer (`PostgresSaver` working).
 - [x] Update `productivity_agent` testing to route emails to `ckorion543@gmail.com`.
@@ -67,4 +72,14 @@
 - [x] Implement Email Reply Feature (Read unread emails, reply using SMTP/IMAP).
 - [x] Implement Human-in-the-loop (HITL) for critical actions.
 - [ ] Comprehensive End-to-End Testing of Productivity Agent.
-- [ ] Future: Keep "Skills" integration in mind.
+
+## New Roadmap (Late July 2026)
+1. **Proper UI implementation**: [x] Build a really good, premium interface (Streamlit).
+2. **Skills Architecture (HITL & Hermes-inspired)**: 
+   - Leave default agent tools untouched.
+   - Build a `skills_registry.py` for dynamic tool loading (Progressive Disclosure).
+   - Implement reasoning-based detection where agent asks for permission before using a skill.
+   - Implement a Skill Generator Node with a Validation Sandbox.
+   - Introduce a Graduation Checkpoint: user must approve sandboxed skills before they become permanent.
+3. **Bug Fixes**: Resolve any remaining issues in the system.
+4. **Fork-Exclusive (CI/CD & Docker)**: Implement deployment pipelines and containerization exclusively on the `Chaitanya-666` fork remote.

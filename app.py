@@ -17,30 +17,119 @@ st.set_page_config(page_title="SmartDesk AI", page_icon="🤖", layout="wide")
 
 st.markdown("""
 <style>
-/* Modern typography and polished UI elements */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+/* 🌌 Premium Dark Mode & Glassmorphism Theme */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400&display=swap');
 
 html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
+    font-family: 'Outfit', sans-serif;
 }
 
-/* Polished buttons with hover effects */
+/* Main App Background */
+.stApp {
+    background: radial-gradient(circle at 15% 50%, #1a1a2e, #16213e, #0f3460);
+    color: #e0e0e0;
+}
+
+/* Sidebar Styling */
+[data-testid="stSidebar"] {
+    background: rgba(15, 23, 42, 0.6) !important;
+    backdrop-filter: blur(12px);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Typography Enhancements */
+h1, h2, h3 {
+    background: -webkit-linear-gradient(45deg, #4facfe 0%, #00f2fe 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 600 !important;
+}
+
+/* Chat Input Container */
+[data-testid="stChatInputContainer"] {
+    background: rgba(20, 30, 50, 0.7);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+    padding: 10px;
+}
+
+/* Chat Messages */
+[data-testid="stChatMessage"] {
+    background: rgba(25, 35, 55, 0.4);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 20px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* Polished Buttons */
 .stButton>button {
-    border-radius: 8px;
-    transition: all 0.2s ease-in-out;
-    border: 1px solid rgba(150, 150, 150, 0.2);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white !important;
+    border: none;
+    border-radius: 12px;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    box-shadow: 0 4px 15px rgba(118, 75, 162, 0.4);
 }
 .stButton>button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    border-color: rgba(150, 150, 150, 0.4);
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 8px 25px rgba(118, 75, 162, 0.6);
+}
+
+/* Code Blocks */
+code {
+    font-family: 'JetBrains Mono', monospace;
+    background: rgba(0, 0, 0, 0.3) !important;
+    color: #00f2fe !important;
+    border-radius: 6px;
+    padding: 2px 6px;
+}
+pre > code {
+    background: transparent !important;
+    color: inherit !important;
+}
+.stCodeBlock {
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* File Uploader */
+[data-testid="stFileUploader"] {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px dashed rgba(255,255,255,0.2);
+    border-radius: 12px;
+    transition: all 0.3s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color: #4facfe;
+    background: rgba(79, 172, 254, 0.05);
+}
+
+/* Status Expander */
+[data-testid="stStatusWidget"] {
+    background: rgba(30, 40, 60, 0.6) !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 /* Refined dividers */
 hr {
-    margin-top: 1.5rem;
-    margin-bottom: 1.5rem;
-    opacity: 0.5;
+    margin: 2rem 0;
+    border-color: rgba(255, 255, 255, 0.1);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -204,6 +293,8 @@ if should_run:
                 "WorkspaceAgent":   "🗂️",
                 "KnowledgeAgent":   "🧠",
                 "ProductivityAgent": "📅",
+                "SkillAgent":        "🚀",
+                "SkillGeneratorAgent": "⚙️",
             }
             
             final_result = None

@@ -23,4 +23,4 @@ chromadb
 sentence-transformers
 torchvision
 psycopg
-psycopg-pool
+psycopg-poolduckduckgo-search

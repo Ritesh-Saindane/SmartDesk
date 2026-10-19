@@ -77,12 +77,26 @@ def handle_query(
     if resume_action:
         if resume_action == "reject":
             state = graph.get_state(config)
-            msgs = state.values.get("productivity_messages", [])
-            last_msg = msgs[-1] if msgs else None
-            if last_msg and hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-                from langchain_core.messages import ToolMessage
-                reject_msgs = [ToolMessage(content="User REJECTED this action.", tool_call_id=tc["id"], name=tc["name"]) for tc in last_msg.tool_calls]
-                graph.update_state(config, {"productivity_messages": reject_msgs}, as_node="ProductivityToolNode")
+            next_node = state.next[0] if state.next else None
+            
+            if next_node == "ProductivityToolNode":
+                msgs = state.values.get("productivity_messages", [])
+                last_msg = msgs[-1] if msgs else None
+                if last_msg and hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+                    from langchain_core.messages import ToolMessage
+                    reject_msgs = [ToolMessage(content="User REJECTED this action.", tool_call_id=tc["id"], name=tc["name"]) for tc in last_msg.tool_calls]
+                    graph.update_state(config, {"productivity_messages": reject_msgs}, as_node="ProductivityToolNode")
+            elif next_node == "SkillToolNode":
+                msgs = state.values.get("skill_messages", [])
+                last_msg = msgs[-1] if msgs else None
+                if last_msg and hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+                    from langchain_core.messages import ToolMessage
+                    reject_msgs = [ToolMessage(content="User REJECTED this action.", tool_call_id=tc["id"], name=tc["name"]) for tc in last_msg.tool_calls]
+                    graph.update_state(config, {"skill_messages": reject_msgs}, as_node="SkillToolNode")
+            elif next_node == "GraduationNode":
+                gen_data = state.values.get("generator_data", {})
+                gen_data["success"] = False
+                graph.update_state(config, {"generator_data": gen_data})
         stream_generator = graph.stream(None, config=config, stream_mode="values")
     else:
         try:
@@ -105,6 +119,7 @@ def handle_query(
         ("workspace_messages", "WorkspaceAgent"),
         ("knowledge_messages", "KnowledgeAgent"),
         ("productivity_messages", "ProductivityAgent"),
+        ("skill_messages", "SkillAgent"),
     ]
     prev_task_id = None
     prev_final = False
@@ -156,9 +171,21 @@ def handle_query(
             if auto_approve:
                 yield {"type": "auto_resume"}
                 return
-            msgs = current_state.values.get("productivity_messages", [])
-            last_msg = msgs[-1] if msgs else None
-            pending_tools = [tc["name"] for tc in last_msg.tool_calls] if (last_msg and hasattr(last_msg, "tool_calls")) else []
+            next_node = current_state.next[0]
+            pending_tools = []
+            if next_node == "ProductivityToolNode":
+                msgs = current_state.values.get("productivity_messages", [])
+                last_msg = msgs[-1] if msgs else None
+                pending_tools = [tc["name"] for tc in last_msg.tool_calls] if (last_msg and hasattr(last_msg, "tool_calls")) else []
+            elif next_node == "SkillToolNode":
+                msgs = current_state.values.get("skill_messages", [])
+                last_msg = msgs[-1] if msgs else None
+                pending_tools = [tc["name"] for tc in last_msg.tool_calls] if (last_msg and hasattr(last_msg, "tool_calls")) else []
+            elif next_node == "GraduationNode":
+                gen_data = current_state.values.get("generator_data", {})
+                skill_name = gen_data.get("skill_name", "unknown_skill")
+                pending_tools = [f"Promote Skill to Permanent: {skill_name}"]
+                
             yield {"type": "interrupted", "pending_tools": pending_tools}
             return
                 

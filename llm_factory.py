@@ -3,7 +3,7 @@ import sys
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 
-def get_llm(model_name: str, temperature: float = 0.0):
+def get_llm(model_name: str, temperature: float = 0.0, max_tokens: int = None):
     """Returns Groq by default. Uses local LLM only if --local is passed."""
     use_local = "--local" in sys.argv
     
@@ -14,8 +14,9 @@ def get_llm(model_name: str, temperature: float = 0.0):
             base_url=local_base_url, 
             api_key=os.getenv("LOCAL_API_KEY", "dummy"), 
             model="local-model",
-            temperature=temperature
+            temperature=temperature,
+            max_tokens=max_tokens
         )
     else:
         # Default Priority: Groq API
-        return ChatGroq(model=model_name, temperature=temperature)
+        return ChatGroq(model=model_name, temperature=temperature, max_tokens=max_tokens)
