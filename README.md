@@ -129,7 +129,7 @@ python main.py
 ## 🧪 Testing Suite
 SmartDesk comes with a comprehensive testing suite simulating complex orchestrator routings for both individual agents and mixed end-to-end workflows:
 ```bash
-python test_end_to_end.py
+python -m pytest tests/test_end_to_end.py
 ```
 
 ## 🔧 Common Troubleshooting

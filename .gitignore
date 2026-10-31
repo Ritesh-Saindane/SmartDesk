@@ -23,3 +23,6 @@ chat_uploads/
 chat_chroma/
 client_secret*
 *.apps.googleusercontent.com.json
+
+# local caches
+unsloth_compiled_cache/

@@ -23,4 +23,7 @@ chromadb
 sentence-transformers
 torchvision
 psycopg
-psycopg-poolduckduckgo-search
+psycopg-pool
+duckduckgo-search
+langchain-openai
+pytest
